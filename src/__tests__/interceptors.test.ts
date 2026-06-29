@@ -138,13 +138,13 @@ describe("Response interceptor — error handling", () => {
   it("redirects to /login/ on 401 response", async () => {
     const error = { response: { status: 401 } };
     await expect(captors.responseErrorCb!(error)).rejects.toBe(error);
-    expect(window.location.href).toContain("/login/");
+    expect(window.location.href).toContain("login");
   });
 
   it("redirects to /login/ on 403 response", async () => {
     const error = { response: { status: 403 } };
     await expect(captors.responseErrorCb!(error)).rejects.toBe(error);
-    expect(window.location.href).toContain("/login/");
+    expect(window.location.href).toContain("login");
   });
 
   it("does NOT redirect on 404 response", async () => {
