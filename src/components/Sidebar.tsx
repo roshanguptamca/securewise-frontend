@@ -51,7 +51,13 @@ export default function Sidebar({
         rel="noreferrer"
         title="Back to GuideWisey"
       >
-        <div className="sw-sidebar-logo-icon">🛡️</div>
+        <div className="sw-sidebar-logo-icon">
+          <img
+            src="/guodewiseyLogo.png"
+            alt="GuideWisey"
+            style={{ width: "2rem", height: "2rem", objectFit: "contain", borderRadius: "6px" }}
+          />
+        </div>
         <div className="sw-sidebar-logo-text">
           <strong>SecureWise</strong>
           <span>by GuideWisey</span>
