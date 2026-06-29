@@ -1,0 +1,4 @@
+{
+  "*.{ts,tsx}": "oxlint",
+  "*.{ts,tsx,json,md,css}": "prettier --check"
+}
