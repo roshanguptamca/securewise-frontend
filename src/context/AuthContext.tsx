@@ -36,11 +36,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     await api.post("/accounts/logout/");
     setUser(null);
-    const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(
-      /\/api$/,
-      "",
-    );
-    window.location.href = base + "/login/";
+    const loginUrl =
+      import.meta.env.VITE_LOGIN_URL ?? "https://www.guidewisey.com/login";
+    window.location.href = loginUrl;
   };
 
   return (

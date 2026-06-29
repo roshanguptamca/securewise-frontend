@@ -4,6 +4,10 @@ const BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
 ).replace(/\/$/, "");
 
+// Where to redirect unauthenticated users — main GuideWisey portal login
+const LOGIN_URL =
+  import.meta.env.VITE_LOGIN_URL ?? "https://www.guidewisey.com/login";
+
 const api = axios.create({
   baseURL: `${BASE_URL}/api`,
   withCredentials: true, // send session cookie (same auth as guidewisey.com)
@@ -30,9 +34,9 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401 || err.response?.status === 403) {
-      // Redirect to GuideWisey login, passing return URL
+      // Redirect to GuideWisey main portal login, passing return URL
       const returnTo = encodeURIComponent(window.location.href);
-      window.location.href = `${BASE_URL}/login/?next=${returnTo}`;
+      window.location.href = `${LOGIN_URL}?next=${returnTo}`;
     }
     return Promise.reject(err);
   },
