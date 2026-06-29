@@ -633,9 +633,43 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   padding: 0 1.5rem;
+  gap: 1rem;
   position: sticky;
   top: 0;
   z-index: 50;
+}
+
+/* Centre quick-nav */
+.sw-topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+  justify-content: center;
+}
+
+.sw-topbar-nav-link {
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--gw-text-muted);
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  white-space: nowrap;
+}
+
+.sw-topbar-nav-link:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--gw-text);
+}
+
+.sw-topbar-nav-link.active {
+  background: rgba(99, 102, 241, 0.18);
+  color: #818cf8;
+  font-weight: 600;
 }
 
 .sw-page {
