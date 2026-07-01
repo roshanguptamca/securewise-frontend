@@ -22,6 +22,7 @@ vi.mock("axios", () => {
     post: vi.fn().mockResolvedValue({ data: {} }),
     patch: vi.fn().mockResolvedValue({ data: {} }),
     delete: vi.fn().mockResolvedValue({ data: {} }),
+    request: vi.fn().mockResolvedValue({ data: {} }),
     interceptors: {
       request: {
         use: vi.fn(
@@ -56,12 +57,14 @@ import "../api/client";
 
 // ─── CSRF interceptor ────────────────────────────────────────────────────────
 describe("Request interceptor — CSRF token injection", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     Object.defineProperty(document, "cookie", {
       writable: true,
       configurable: true,
       value: "",
     });
+    const { __resetCsrfCacheForTests } = await import("../api/client");
+    __resetCsrfCacheForTests();
   });
 
   afterEach(() => {
@@ -72,39 +75,52 @@ describe("Request interceptor — CSRF token injection", () => {
     });
   });
 
-  it("does NOT inject X-CSRFToken header when cookie is absent", () => {
-    document.cookie = "";
-    const config = { headers: {} as Record<string, string> };
-    const result = captors.requestCb!(config as Record<string, unknown>);
-    expect(
-      (result as { headers: Record<string, string> }).headers["X-CSRFToken"],
-    ).toBeUndefined();
+  it("does NOT inject X-CSRFToken header for a GET request (no CSRF needed for safe methods)", async () => {
+    Object.defineProperty(document, "cookie", {
+      writable: true,
+      configurable: true,
+      value: "csrftoken=test-csrf-value",
+    });
+    const config = { method: "get", headers: {} as Record<string, string> };
+    const result = (await captors.requestCb!(
+      config as Record<string, unknown>,
+    )) as { headers: Record<string, string> };
+    expect(result.headers["X-CSRFToken"]).toBeUndefined();
   });
 
-  it("injects X-CSRFToken header when csrftoken cookie is present", () => {
+  it("does NOT inject X-CSRFToken header on a mutating request when no cookie/cached token is available and the CSRF endpoint returns nothing useful", async () => {
+    document.cookie = "";
+    const config = { method: "post", headers: {} as Record<string, string> };
+    const result = (await captors.requestCb!(
+      config as Record<string, unknown>,
+    )) as { headers: Record<string, string> };
+    expect(result.headers["X-CSRFToken"]).toBeUndefined();
+  });
+
+  it("injects X-CSRFToken header on a mutating request when csrftoken cookie is present", async () => {
     Object.defineProperty(document, "cookie", {
       writable: true,
       configurable: true,
       value: "sessionid=abc; csrftoken=test-csrf-value; othercookie=xyz",
     });
-    const config = { headers: {} as Record<string, string> };
-    const result = captors.requestCb!(config as Record<string, unknown>);
-    expect(
-      (result as { headers: Record<string, string> }).headers["X-CSRFToken"],
-    ).toBe("test-csrf-value");
+    const config = { method: "post", headers: {} as Record<string, string> };
+    const result = (await captors.requestCb!(
+      config as Record<string, unknown>,
+    )) as { headers: Record<string, string> };
+    expect(result.headers["X-CSRFToken"]).toBe("test-csrf-value");
   });
 
-  it("picks only the csrftoken value when multiple cookies are present", () => {
+  it("picks only the csrftoken value when multiple cookies are present", async () => {
     Object.defineProperty(document, "cookie", {
       writable: true,
       configurable: true,
       value: "a=1; csrftoken=my-token-123; b=2",
     });
-    const config = { headers: {} as Record<string, string> };
-    const result = captors.requestCb!(config as Record<string, unknown>);
-    expect(
-      (result as { headers: Record<string, string> }).headers["X-CSRFToken"],
-    ).toBe("my-token-123");
+    const config = { method: "patch", headers: {} as Record<string, string> };
+    const result = (await captors.requestCb!(
+      config as Record<string, unknown>,
+    )) as { headers: Record<string, string> };
+    expect(result.headers["X-CSRFToken"]).toBe("my-token-123");
   });
 });
 
@@ -164,5 +180,100 @@ describe("Response interceptor — error handling", () => {
     const error = { message: "Network Error" }; // no .response
     await expect(captors.responseErrorCb!(error)).rejects.toBe(error);
     expect(window.location.href).toBe("http://localhost:5174/dashboard");
+  });
+
+  it("does NOT redirect to login on a 403 from the logout endpoint (even after CSRF retry fails)", async () => {
+    // logout() itself is responsible for clearing state and redirecting home in this
+    // case — bouncing to the GuideWisey login screen instead would be wrong UX for a
+    // user who explicitly asked to log out.
+    const error = {
+      response: { status: 403 },
+      config: { method: "post", url: "/accounts/logout/", _csrfRetry: true },
+    };
+    await expect(captors.responseErrorCb!(error)).rejects.toBe(error);
+    expect(window.location.href).toBe("http://localhost:5174/dashboard");
+  });
+});
+
+// ─── CSRF retry-on-403 ────────────────────────────────────────────────────────
+describe("Response interceptor — CSRF retry on 403", () => {
+  const originalLocation = window.location;
+
+  beforeEach(async () => {
+    Object.defineProperty(window, "location", {
+      writable: true,
+      configurable: true,
+      value: { href: "http://localhost:5174/dashboard", assign: vi.fn() },
+    });
+    Object.defineProperty(document, "cookie", {
+      writable: true,
+      configurable: true,
+      value: "",
+    });
+    const { __resetCsrfCacheForTests } = await import("../api/client");
+    __resetCsrfCacheForTests();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      writable: true,
+      configurable: true,
+      value: originalLocation,
+    });
+    Object.defineProperty(document, "cookie", {
+      writable: true,
+      configurable: true,
+      value: "",
+    });
+  });
+
+  it("fetches a fresh CSRF token and retries once on a 403 from a mutating request", async () => {
+    const { default: api } = await import("../api/client");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const requestSpy = vi
+      .spyOn(api, "request")
+      .mockResolvedValueOnce({ data: { ok: true } } as never);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const getSpy = vi
+      .spyOn(api, "get")
+      .mockResolvedValueOnce({ data: { csrfToken: "fresh-token" } } as never);
+
+    const config = { method: "post", url: "/accounts/logout/", headers: {} };
+    const error = { response: { status: 403 }, config };
+
+    const result = await captors.responseErrorCb!(error);
+
+    expect(getSpy).toHaveBeenCalledWith("/accounts/csrf/");
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    const retriedConfig = requestSpy.mock.calls[0][0] as {
+      headers: Record<string, string>;
+      _csrfRetry?: boolean;
+    };
+    expect(retriedConfig.headers["X-CSRFToken"]).toBe("fresh-token");
+    expect(retriedConfig._csrfRetry).toBe(true);
+    expect(result).toEqual({ data: { ok: true } });
+
+    requestSpy.mockRestore();
+    getSpy.mockRestore();
+  });
+
+  it("does not retry a second time if the retried request also gets a 403", async () => {
+    const { default: api } = await import("../api/client");
+    const getSpy = vi
+      .spyOn(api, "get")
+      .mockResolvedValue({ data: { csrfToken: "fresh-token" } } as never);
+
+    const config = {
+      method: "post",
+      url: "/accounts/logout/",
+      headers: {},
+      _csrfRetry: true, // already retried once
+    };
+    const error = { response: { status: 403 }, config };
+
+    await expect(captors.responseErrorCb!(error)).rejects.toBe(error);
+    expect(getSpy).not.toHaveBeenCalled();
+
+    getSpy.mockRestore();
   });
 });
