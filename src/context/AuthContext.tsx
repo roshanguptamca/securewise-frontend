@@ -34,11 +34,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = async () => {
-    await api.post("/accounts/logout/");
-    setUser(null);
-    const loginUrl =
-      import.meta.env.VITE_LOGIN_URL ?? "https://www.guidewisey.com/login";
-    window.location.href = loginUrl;
+    try {
+      await api.post("/accounts/logout/");
+    } catch {
+      // Ignore failures here — we still want to clear local state and leave
+      // SecureWise even if the server-side logout call itself failed.
+    } finally {
+      setUser(null);
+      // Logging out must leave SecureWise entirely and land on the GuideWisey
+      // homepage — never an internal SecureWise route (there is no "logged out"
+      // dashboard state, and a full-page load of a client-only route without a
+      // matching static asset/rewrite would otherwise 404).
+      const homeUrl =
+        import.meta.env.VITE_GUIDEWISE_HOME_URL ??
+        (import.meta.env.DEV
+          ? "http://localhost:3000/"
+          : "https://www.guidewisey.com/");
+      window.location.href = homeUrl;
+    }
   };
 
   return (
