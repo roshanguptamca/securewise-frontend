@@ -1,11 +1,9 @@
 /**
- * Tests for AuthContext's logout() redirect behavior.
- *
- * Regression: logout() used to redirect to VITE_LOGIN_URL (a GuideWisey
- * *login* page), and there was no vercel.json SPA rewrite — so any full-page
- * navigation to an internal client-only route (e.g. a misconfigured target
- * ending up at "/dashboard") returned a genuine Vercel edge 404. Logout must
- * always leave SecureWise for an absolute GuideWisey homepage URL.
+ * Tests for AuthContext's logout() behavior: it must call the existing backend logout
+ * endpoint, clear all local/session client-side auth state, and redirect to the
+ * GuideWisey homepage (never an internal SecureWise route — there was no vercel.json SPA
+ * rewrite, so a full-page navigation to a client-only route previously returned a genuine
+ * Vercel edge 404).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -36,6 +34,10 @@ describe("AuthContext logout()", () => {
       configurable: true,
       value: { href: "https://securewise.guidewisey.com/dashboard" },
     });
+    localStorage.clear();
+    sessionStorage.clear();
+    mockPost.mockClear();
+    mockPost.mockResolvedValue({ data: {} });
   });
 
   afterEach(() => {
@@ -45,6 +47,8 @@ describe("AuthContext logout()", () => {
       value: originalLocation,
     });
     vi.unstubAllEnvs();
+    localStorage.clear();
+    sessionStorage.clear();
   });
 
   it("redirects to VITE_GUIDEWISE_HOME_URL after logging out", async () => {
@@ -83,6 +87,7 @@ describe("AuthContext logout()", () => {
 
   it("still redirects home even if the logout API call fails", async () => {
     vi.stubEnv("VITE_GUIDEWISE_HOME_URL", "https://www.guidewisey.com/");
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockPost.mockRejectedValueOnce(new Error("network error"));
     render(
       <AuthProvider>
@@ -94,6 +99,48 @@ describe("AuthContext logout()", () => {
 
     await waitFor(() => {
       expect(window.location.href).toBe("https://www.guidewisey.com/");
+    });
+    // Failure must be logged (safely, no PII/tokens) rather than silently swallowed.
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("calls the backend logout endpoint before clearing state and redirecting", async () => {
+    vi.stubEnv("VITE_GUIDEWISE_HOME_URL", "https://www.guidewisey.com/");
+    const callOrder: string[] = [];
+    mockPost.mockImplementationOnce(() => {
+      callOrder.push("logout-api");
+      return Promise.resolve({ data: {} });
+    });
+    render(
+      <AuthProvider>
+        <LogoutButton />
+      </AuthProvider>,
+    );
+    const button = await screen.findByText("Logout");
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(window.location.href).toBe("https://www.guidewisey.com/");
+    });
+    expect(callOrder).toEqual(["logout-api"]);
+  });
+
+  it("clears localStorage and sessionStorage on logout", async () => {
+    vi.stubEnv("VITE_GUIDEWISE_HOME_URL", "https://www.guidewisey.com/");
+    localStorage.setItem("some-stale-key", "value");
+    sessionStorage.setItem("another-stale-key", "value");
+    render(
+      <AuthProvider>
+        <LogoutButton />
+      </AuthProvider>,
+    );
+    const button = await screen.findByText("Logout");
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(localStorage.getItem("some-stale-key")).toBeNull();
+      expect(sessionStorage.getItem("another-stale-key")).toBeNull();
     });
   });
 });
