@@ -35,12 +35,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
+      // Reuse the existing GuideWisey-shared logout endpoint (same session/cookie auth
+      // used by /accounts/me/) so the session is actually invalidated server-side, not
+      // just forgotten client-side.
       await api.post("/accounts/logout/");
-    } catch {
-      // Ignore failures here — we still want to clear local state and leave
-      // SecureWise even if the server-side logout call itself failed.
+    } catch (err) {
+      // Logout must never get stuck on a failed API call — still clear local state and
+      // redirect home, but log safely (no PII/tokens) so failures are visible in devtools.
+      console.error(
+        "SecureWise logout API call failed; clearing local session anyway.",
+        err,
+      );
     } finally {
       setUser(null);
+      // Defensively clear any client-side auth/session state. SecureWise itself does not
+      // currently store tokens in localStorage/sessionStorage (auth is cookie-based), but
+      // clearing both guards against stale state from other features and future changes.
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch {
+        // Storage access can throw in locked-down/private browsing contexts — ignore.
+      }
       // Logging out must leave SecureWise entirely and land on the GuideWisey
       // homepage — never an internal SecureWise route (there is no "logged out"
       // dashboard state, and a full-page load of a client-only route without a
