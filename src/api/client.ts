@@ -1,4 +1,5 @@
 import axios from "axios";
+import type { AxiosError, InternalAxiosRequestConfig } from "axios";
 
 const BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
@@ -13,8 +14,19 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// ── CSRF helper ──────────────────────────────────────────────────────────────
-function getCsrfToken(): string {
+// ── CSRF helpers ──────────────────────────────────────────────────────────────
+// Django's CSRF_COOKIE_DOMAIN is unset, so the csrftoken cookie set by
+// api.guidewisey.com is scoped to that exact host and is NOT readable via
+// document.cookie on this origin (securewise.guidewisey.com) — it is a
+// different (sub)domain as far as cookie visibility from JS goes. Reading
+// only document.cookie therefore silently produces an empty CSRF header,
+// which the backend rejects with 403. The backend's /accounts/csrf/ endpoint
+// (the same one gw-frontend's ensureCSRF() helper uses) also returns the
+// token directly in its JSON body for exactly this reason, so we fetch it
+// from there instead of relying on a readable cookie.
+let cachedCsrfToken = "";
+
+function readCsrfCookie(): string {
   return (
     document.cookie
       .split("; ")
@@ -23,23 +35,76 @@ function getCsrfToken(): string {
   );
 }
 
-api.interceptors.request.use((cfg) => {
-  const csrf = getCsrfToken();
-  if (csrf) cfg.headers["X-CSRFToken"] = csrf;
+// Exposed for tests only — resets the module-level cache between test cases.
+export function __resetCsrfCacheForTests(): void {
+  cachedCsrfToken = "";
+}
+
+async function fetchCsrfToken(): Promise<string> {
+  try {
+    const res = await api.get("/accounts/csrf/");
+    cachedCsrfToken = res.data?.csrfToken || readCsrfCookie() || "";
+  } catch {
+    cachedCsrfToken = readCsrfCookie() || "";
+  }
+  return cachedCsrfToken;
+}
+
+const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
+
+api.interceptors.request.use(async (cfg) => {
+  const method = (cfg.method || "get").toLowerCase();
+  if (MUTATING_METHODS.has(method)) {
+    const csrf =
+      cachedCsrfToken || readCsrfCookie() || (await fetchCsrfToken());
+    if (csrf) cfg.headers["X-CSRFToken"] = csrf;
+  }
   return cfg;
 });
 
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
-    if (err.response?.status === 401 || err.response?.status === 403) {
-      // Redirect to GuideWisey main portal login, passing return URL
-      const returnTo = encodeURIComponent(window.location.href);
-      window.location.href = `${LOGIN_URL}?next=${returnTo}`;
+  async (err: AxiosError) => {
+    const config = err.config as
+      (InternalAxiosRequestConfig & { _csrfRetry?: boolean }) | undefined;
+    const status = err.response?.status;
+    const method = (config?.method || "").toLowerCase();
+
+    // A 403 on a mutating request is very likely a missing/stale CSRF token
+    // (see the cross-origin cookie note above, or the cached token simply
+    // expired/rotated). Fetch a fresh token directly from the backend and
+    // retry exactly once before giving up.
+    if (
+      status === 403 &&
+      config &&
+      !config._csrfRetry &&
+      MUTATING_METHODS.has(method)
+    ) {
+      config._csrfRetry = true;
+      const csrf = await fetchCsrfToken();
+      if (csrf) {
+        config.headers = config.headers ?? {};
+        config.headers["X-CSRFToken"] = csrf;
+        return api.request(config);
+      }
+    }
+
+    if (status === 401 || status === 403) {
+      // A logout call failing (even after the CSRF retry above) must never bounce the
+      // user to the login screen — AuthContext's own logout() catch/finally handles
+      // clearing local state and redirecting to the GuideWisey homepage instead.
+      const isLogoutCall = (config?.url || "").includes("/accounts/logout/");
+      if (!isLogoutCall) {
+        // Redirect to GuideWisey main portal login, passing return URL
+        const returnTo = encodeURIComponent(window.location.href);
+        window.location.href = `${LOGIN_URL}?next=${returnTo}`;
+      }
     }
     return Promise.reject(err);
   },
 );
+
+export { fetchCsrfToken };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 export const sw = {
