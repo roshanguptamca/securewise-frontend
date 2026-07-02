@@ -3,49 +3,67 @@
  * target_url / api_spec_url / docker_image fields only render for the
  * relevant scan_type selections (production scanning UX extension).
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
-vi.mock("../api/client", () => {
-  const mockOrgs = [{ id: "org-1", name: "Acme" }];
-  const mockProjects = [
-    { id: "proj-1", name: "Web App", organization: "org-1" },
-  ];
-  const mockRepositories = [
-    {
-      id: "repo-1",
-      name: "web-app",
-      organization: "org-1",
-      project: "proj-1",
-      repository_url: "https://github.com/acme/web-app",
-    },
-  ];
-  return {
-    sw: {
-      scans: {
-        list: vi.fn().mockResolvedValue({ data: [] }),
-        create: vi.fn().mockResolvedValue({ data: { id: "scan-1" } }),
-        start: vi.fn().mockResolvedValue({ data: {} }),
-      },
-      projects: { list: vi.fn().mockResolvedValue({ data: mockProjects }) },
-      orgs: { list: vi.fn().mockResolvedValue({ data: mockOrgs }) },
-      repos: {
-        list: vi.fn().mockResolvedValue({ data: mockRepositories }),
-      },
-      policies: {
-        list: vi.fn().mockResolvedValue({ data: [] }),
-      },
-    },
-  };
-});
+const mockScans = vi.hoisted(() => ({
+  list: vi.fn(),
+  create: vi.fn(),
+  start: vi.fn(),
+  retry: vi.fn(),
+  cancel: vi.fn(),
+}));
 
+const mockProjects = vi.hoisted(() => [
+  { id: "proj-1", name: "Web App", organization: "org-1" },
+]);
+const mockOrgs = vi.hoisted(() => [{ id: "org-1", name: "Acme" }]);
+const mockRepositories = vi.hoisted(() => [
+  {
+    id: "repo-1",
+    name: "web-app",
+    organization: "org-1",
+    project: "proj-1",
+    repository_url: "https://github.com/acme/web-app",
+  },
+]);
+const mockPolicies = vi.hoisted(() => [
+  {
+    id: "policy-1",
+    organization: "org-1",
+    project: null,
+    name: "Secure Default",
+    is_default: true,
+  },
+]);
+
+vi.mock("../api/client", () => ({
+  sw: {
+    scans: mockScans,
+    projects: { list: vi.fn().mockResolvedValue({ data: mockProjects }) },
+    orgs: { list: vi.fn().mockResolvedValue({ data: mockOrgs }) },
+    repos: {
+      list: vi.fn().mockResolvedValue({ data: mockRepositories }),
+    },
+    policies: {
+      list: vi.fn().mockResolvedValue({ data: mockPolicies }),
+    },
+  },
+}));
+
+import { sw } from "../api/client";
 import ScansPage from "../pages/scans/ScansPage";
 
 describe("CreateScanModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockScans.list.mockResolvedValue({ data: [] });
+    mockScans.create.mockResolvedValue({ data: { id: "scan-1" } });
+    mockScans.start.mockResolvedValue({ data: {} });
+    mockScans.retry.mockResolvedValue({ data: {} });
+    mockScans.cancel.mockResolvedValue({ data: {} });
   });
 
   async function openModal() {
@@ -96,6 +114,28 @@ describe("CreateScanModal", () => {
     expect(screen.getByLabelText(/OpenAPI\/Swagger URL/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Docker Image/i)).toBeInTheDocument();
     expect(screen.getByText(/Full Scan will run/i)).toBeInTheDocument();
+  });
+
+  it("reveals bypass reason and blocks submit when it is empty", async () => {
+    await openModal();
+
+    expect(screen.queryByLabelText(/^Reason \*/i)).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByLabelText(/Bypass quality gate for this scan/i),
+    );
+
+    expect(screen.getByLabelText(/^Reason \*/i)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /create & start/i }),
+    );
+
+    expect(sw.scans.create).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(
+        /Reason is required when bypassing the quality gate/i,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("no longer shows the old MVP mock scanner disclaimer", async () => {

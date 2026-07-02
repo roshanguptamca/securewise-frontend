@@ -182,6 +182,8 @@ export const sw = {
     update: (id: string, data: object) =>
       api.patch(`/securewise/scan-policies/${id}/`, data),
     delete: (id: string) => api.delete(`/securewise/scan-policies/${id}/`),
+    setDefault: (id: string) =>
+      api.post(`/securewise/scan-policies/${id}/set-default/`),
   },
 
   // Scans
@@ -190,6 +192,7 @@ export const sw = {
     get: (id: string) => api.get(`/securewise/scans/${id}/`),
     create: (data: object) => api.post("/securewise/scans/", data),
     start: (id: string) => api.post(`/securewise/scans/${id}/start/`),
+    retry: (id: string) => api.post(`/securewise/scans/${id}/retry/`),
     cancel: (id: string) => api.post(`/securewise/scans/${id}/cancel/`),
     progress: (id: string) => api.get(`/securewise/scans/${id}/progress/`),
     engineResults: (id: string) =>
@@ -206,6 +209,12 @@ export const sw = {
       api.post(`/securewise/findings/${id}/accept-risk/`, { note }),
     markFalsePositive: (id: string, note?: string) =>
       api.post(`/securewise/findings/${id}/mark-false-positive/`, { note }),
+    aiSuggestion: (id: string, force?: boolean) =>
+      api.post(
+        `/securewise/findings/${id}/ai-suggestion/`,
+        {},
+        { params: force ? { force: true } : {} },
+      ),
   },
 
   // Reports
@@ -217,6 +226,12 @@ export const sw = {
     // (owasp_top10, cwe_top25, security_summary, executive_summary,
     // developer_remediation, quality_gate) added alongside `format`.
     generate: (data: object) => api.post("/securewise/reports/", data),
+    htmlUrl: (id: string) =>
+      `${api.defaults.baseURL}/securewise/reports/${id}/html/`,
+    pdfUrl: (id: string) =>
+      `${api.defaults.baseURL}/securewise/reports/${id}/pdf/`,
+    pdf: (id: string) =>
+      api.get(`/securewise/reports/${id}/pdf/`, { responseType: "blob" }),
   },
 
   // Integrations (external tools)

@@ -1,13 +1,21 @@
-/**
- * Tests for ScanDetailPage's real-time engine progress rendering:
- * verifies the progress bar and per-engine status list render when
- * progress data is present (from the new /scans/{id}/progress/ endpoint).
- */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-const mockScan = vi.hoisted(() => ({
+const mockScans = vi.hoisted(() => ({
+  get: vi.fn(),
+  start: vi.fn(),
+  retry: vi.fn(),
+  progress: vi.fn(),
+  engineResults: vi.fn(),
+}));
+
+const mockFindings = vi.hoisted(() => ({
+  list: vi.fn(),
+}));
+
+const currentScan = vi.hoisted(() => ({
   id: "scan-123",
   organization: "org-1",
   project: "proj-1",
@@ -25,6 +33,8 @@ const mockScan = vi.hoisted(() => ({
   error_message: "",
   scanner_metadata: {},
   quality_gate_passed: null,
+  bypass_quality_gate: false,
+  bypass_reason: "",
   finding_counts: {
     critical: 0,
     high: 1,
@@ -38,7 +48,7 @@ const mockScan = vi.hoisted(() => ({
   progress: 42,
 }));
 
-const mockProgress = vi.hoisted(() => ({
+const currentProgress = vi.hoisted(() => ({
   id: "scan-123",
   status: "running_sast",
   progress: 42,
@@ -58,26 +68,53 @@ const mockProgress = vi.hoisted(() => ({
 
 vi.mock("../api/client", () => ({
   sw: {
-    scans: {
-      get: vi.fn().mockResolvedValue({ data: mockScan }),
-      start: vi.fn().mockResolvedValue({ data: {} }),
-      progress: vi.fn().mockResolvedValue({ data: mockProgress }),
-      engineResults: vi.fn().mockResolvedValue({ data: [] }),
-    },
-    findings: {
-      list: vi.fn().mockResolvedValue({ data: [] }),
-    },
+    scans: mockScans,
+    findings: mockFindings,
   },
 }));
 
 import ScanDetailPage from "../pages/scans/ScanDetailPage";
 
-describe("ScanDetailPage engine progress", () => {
+describe("ScanDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    Object.assign(currentScan, {
+      status: "running_sast",
+      duration_seconds: null,
+      progress: 42,
+      quality_gate_passed: null,
+      bypass_quality_gate: false,
+      bypass_reason: "",
+      error_message: "",
+    });
+
+    Object.assign(currentProgress, {
+      status: "running_sast",
+      progress: 42,
+      elapsed_seconds: 17,
+      findings_count: 3,
+      engines: [
+        { engine: "sast", status: "running", findings_count: 2 },
+        { engine: "secrets", status: "completed", findings_count: 1 },
+        {
+          engine: "container",
+          status: "skipped",
+          findings_count: 0,
+          skipped_reason: "docker_image not provided",
+        },
+      ],
+    });
+
+    mockScans.get.mockResolvedValue({ data: currentScan });
+    mockScans.start.mockResolvedValue({ data: {} });
+    mockScans.retry.mockResolvedValue({ data: {} });
+    mockScans.progress.mockResolvedValue({ data: currentProgress });
+    mockScans.engineResults.mockResolvedValue({ data: [] });
+    mockFindings.list.mockResolvedValue({ data: [] });
   });
 
-  it("renders progress bar and engine statuses from the progress endpoint", async () => {
+  function renderPage() {
     render(
       <MemoryRouter initialEntries={["/scans/scan-123"]}>
         <Routes>
@@ -85,6 +122,10 @@ describe("ScanDetailPage engine progress", () => {
         </Routes>
       </MemoryRouter>,
     );
+  }
+
+  it("renders progress bar and engine statuses from the progress endpoint", async () => {
+    renderPage();
 
     await waitFor(() => screen.getByText("Scan Detail"));
     await waitFor(() => screen.getByText("Engines"));
@@ -94,5 +135,22 @@ describe("ScanDetailPage engine progress", () => {
     expect(screen.getByText("SECRETS")).toBeInTheDocument();
     expect(screen.getByText("CONTAINER")).toBeInTheDocument();
     expect(screen.getByText("docker_image not provided")).toBeInTheDocument();
+  });
+
+  it("renders a retry button for failed scans and calls retry", async () => {
+    currentScan.status = "failed";
+    currentProgress.status = "failed";
+
+    renderPage();
+
+    const retryButton = await screen.findByRole("button", {
+      name: /retry scan/i,
+    });
+    await userEvent.click(retryButton);
+
+    expect(mockScans.retry).toHaveBeenCalledWith("scan-123");
+    await waitFor(() => {
+      expect(screen.getByText("Scan retry requested.")).toBeInTheDocument();
+    });
   });
 });

@@ -1,12 +1,33 @@
 import { useEffect, useState } from "react";
 import { sw } from "../../api/client";
-import type { Report, Project, Organization, Scan } from "../../types";
+import type { Organization, Project, Report, Scan } from "../../types";
 import {
-  LoadingState,
   EmptyState,
   ErrorState,
+  LoadingState,
 } from "../../components/ui/States";
 import { Modal } from "../../components/ui/Modal";
+
+function parseApiError(error: any): string {
+  const data = error?.response?.data;
+  if (typeof data?.detail === "string") return data.detail;
+  if (typeof data === "string") return data;
+  if (data && typeof data === "object") {
+    for (const value of Object.values(data)) {
+      if (typeof value === "string") return value;
+      if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+    }
+  }
+  return "Request failed.";
+}
+
+function slugifyFilename(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "report";
+}
 
 export default function ReportsPage() {
   const [reports, setReports] = useState<Report[]>([]);
@@ -16,28 +37,63 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [viewing, setViewing] = useState<Report | null>(null);
+  const [downloadId, setDownloadId] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState("");
 
   const load = () => {
     setLoading(true);
+    setError("");
     Promise.all([
       sw.reports.list(),
       sw.projects.list(),
       sw.orgs.list(),
       sw.scans.list({ status: "completed" }),
     ])
-      .then(([r, p, o, s]) => {
-        setReports(r.data.results ?? r.data);
-        setProjects(p.data.results ?? p.data);
-        setOrgs(o.data.results ?? o.data);
-        setScans(s.data.results ?? s.data);
+      .then(([reportResponse, projectResponse, orgResponse, scanResponse]) => {
+        setReports(reportResponse.data.results ?? reportResponse.data);
+        setProjects(projectResponse.data.results ?? projectResponse.data);
+        setOrgs(orgResponse.data.results ?? orgResponse.data);
+        setScans(scanResponse.data.results ?? scanResponse.data);
       })
       .catch(() => setError("Failed to load reports."))
       .finally(() => setLoading(false));
   };
+
   useEffect(() => {
     load();
   }, []);
+
+  const handleViewHtml = (report: Report) => {
+    setActionMessage("");
+    const opened = window.open(
+      sw.reports.htmlUrl(report.id),
+      "_blank",
+      "noopener",
+    );
+    if (!opened) {
+      setActionMessage("Unable to open the report in a new tab.");
+    }
+  };
+
+  const handleDownloadPdf = async (report: Report) => {
+    setDownloadId(report.id);
+    setActionMessage("");
+    try {
+      const response = await sw.reports.pdf(report.id);
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `securewise-report-${slugifyFilename(report.title)}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (downloadError: any) {
+      setActionMessage(parseApiError(downloadError));
+    } finally {
+      setDownloadId(null);
+    }
+  };
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -56,6 +112,13 @@ export default function ReportsPage() {
         </button>
       </div>
 
+      {actionMessage && (
+        <div className="alert alert-info mb-4" role="status">
+          <span>ℹ️</span>
+          <span>{actionMessage}</span>
+        </div>
+      )}
+
       {reports.length === 0 ? (
         <EmptyState
           title="No reports yet"
@@ -68,22 +131,22 @@ export default function ReportsPage() {
         />
       ) : (
         <div className="grid grid-3 gap-4">
-          {reports.map((r) => {
-            const proj = projects.find((p) => p.id === r.project);
+          {reports.map((report) => {
+            const project = projects.find((item) => item.id === report.project);
             return (
               <div
-                key={r.id}
+                key={report.id}
                 className="glass-card"
                 style={{ padding: "1.25rem" }}
               >
                 <div className="flex items-center justify-between mb-3">
                   <span className="badge badge-info">
-                    {r.format.toUpperCase()}
+                    {report.format.toUpperCase()}
                   </span>
                   <span
-                    className={`badge ${r.status === "ready" ? "badge-completed" : r.status === "failed" ? "badge-failed" : "badge-queued"}`}
+                    className={`badge ${report.status === "ready" ? "badge-completed" : report.status === "failed" ? "badge-failed" : "badge-queued"}`}
                   >
-                    {r.status}
+                    {report.status}
                   </span>
                 </div>
                 <h3
@@ -93,32 +156,44 @@ export default function ReportsPage() {
                     marginBottom: 4,
                   }}
                 >
-                  {r.title}
+                  {report.title}
                 </h3>
                 <p className="text-xs text-muted mb-3">
-                  {proj?.name ?? "—"} ·{" "}
-                  {new Date(r.created_at).toLocaleDateString()}
+                  {project?.name ?? "—"} ·{" "}
+                  {new Date(report.created_at).toLocaleDateString()}
                 </p>
-                {r.quality_gate_passed !== null && (
+                {report.quality_gate_passed !== null && (
                   <div
-                    className={`alert ${r.quality_gate_passed ? "alert-success" : "alert-error"} mb-3`}
+                    className={`alert ${report.quality_gate_passed ? "alert-success" : "alert-error"} mb-3`}
                     style={{ padding: "0.4rem 0.75rem" }}
                   >
                     <span style={{ fontSize: "0.72rem" }}>
-                      {r.quality_gate_passed
+                      {report.quality_gate_passed
                         ? "✅ Quality gate passed"
                         : "❌ Quality gate failed"}
                     </span>
                   </div>
                 )}
-                {r.status === "ready" && (
-                  <button
-                    className="btn-secondary w-full"
-                    style={{ fontSize: "0.78rem" }}
-                    onClick={() => setViewing(r)}
-                  >
-                    📄 View Report
-                  </button>
+                {report.status === "ready" && (
+                  <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+                    <button
+                      className="btn-secondary"
+                      style={{ fontSize: "0.78rem", flex: 1 }}
+                      onClick={() => handleViewHtml(report)}
+                    >
+                      View HTML
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      style={{ fontSize: "0.78rem", flex: 1 }}
+                      onClick={() => handleDownloadPdf(report)}
+                      disabled={downloadId === report.id}
+                    >
+                      {downloadId === report.id
+                        ? "Downloading…"
+                        : "Download PDF"}
+                    </button>
+                  </div>
                 )}
               </div>
             );
@@ -137,43 +212,6 @@ export default function ReportsPage() {
             load();
           }}
         />
-      )}
-
-      {viewing && (
-        <Modal
-          title={viewing.title}
-          onClose={() => setViewing(null)}
-          wide
-          footer={
-            <button
-              className="btn-secondary"
-              onClick={() => {
-                const blob = new Blob(
-                  [JSON.stringify(viewing.report_data, null, 2)],
-                  { type: "application/json" },
-                );
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${viewing.title}.json`;
-                a.click();
-              }}
-            >
-              ⬇ Download JSON
-            </button>
-          }
-        >
-          <pre
-            style={{
-              fontSize: "0.72rem",
-              color: "#e2e8f0",
-              overflow: "auto",
-              maxHeight: 500,
-            }}
-          >
-            {JSON.stringify(viewing.report_data, null, 2)}
-          </pre>
-        </Modal>
       )}
     </div>
   );
@@ -202,24 +240,28 @@ function CreateReportModal({
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (key: string, value: string) =>
+    setForm((current) => ({ ...current, [key]: value }));
 
   const submit = async () => {
-    if (!form.project || !form.title)
-      return setErr("Project and title are required.");
+    if (!form.project || !form.title) {
+      setErr("Project and title are required.");
+      return;
+    }
     setSaving(true);
+    setErr("");
     try {
       await sw.reports.generate({ ...form, scan: form.scan || undefined });
       onCreated();
-    } catch (e: any) {
-      setErr(e.response?.data?.detail ?? "Failed to create report.");
+    } catch (error: any) {
+      setErr(parseApiError(error) || "Failed to create report.");
     } finally {
       setSaving(false);
     }
   };
 
   const filteredScans = form.project
-    ? scans.filter((s) => s.project === form.project)
+    ? scans.filter((scan) => scan.project === form.project)
     : scans;
 
   return (
@@ -244,11 +286,11 @@ function CreateReportModal({
           <select
             className="form-select"
             value={form.organization}
-            onChange={(e) => set("organization", e.target.value)}
+            onChange={(event) => set("organization", event.target.value)}
           >
-            {orgs.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
+            {orgs.map((org) => (
+              <option key={org.id} value={org.id}>
+                {org.name}
               </option>
             ))}
           </select>
@@ -258,11 +300,11 @@ function CreateReportModal({
           <select
             className="form-select"
             value={form.project}
-            onChange={(e) => set("project", e.target.value)}
+            onChange={(event) => set("project", event.target.value)}
           >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
               </option>
             ))}
           </select>
@@ -272,12 +314,13 @@ function CreateReportModal({
           <select
             className="form-select"
             value={form.scan}
-            onChange={(e) => set("scan", e.target.value)}
+            onChange={(event) => set("scan", event.target.value)}
           >
             <option value="">— No scan selected —</option>
-            {filteredScans.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.scan_type} · {new Date(s.created_at).toLocaleDateString()}
+            {filteredScans.map((scan) => (
+              <option key={scan.id} value={scan.id}>
+                {scan.scan_type} ·{" "}
+                {new Date(scan.created_at).toLocaleDateString()}
               </option>
             ))}
           </select>
@@ -287,7 +330,7 @@ function CreateReportModal({
           <input
             className="form-input"
             value={form.title}
-            onChange={(e) => set("title", e.target.value)}
+            onChange={(event) => set("title", event.target.value)}
             placeholder="Security Report – Q1 2026"
           />
         </div>
@@ -296,7 +339,7 @@ function CreateReportModal({
           <select
             className="form-select"
             value={form.report_type}
-            onChange={(e) => set("report_type", e.target.value)}
+            onChange={(event) => set("report_type", event.target.value)}
           >
             <option value="security_summary">Security Summary</option>
             <option value="executive_summary">Executive Summary</option>
@@ -311,7 +354,7 @@ function CreateReportModal({
           <select
             className="form-select"
             value={form.format}
-            onChange={(e) => set("format", e.target.value)}
+            onChange={(event) => set("format", event.target.value)}
           >
             <option value="json">JSON</option>
             <option value="html" disabled>

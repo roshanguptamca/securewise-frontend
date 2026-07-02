@@ -152,8 +152,14 @@ export interface ScanPolicy {
   fail_on_severity: Severity;
   max_critical: number;
   max_high: number;
+  max_medium: number;
+  fail_on_secrets: boolean;
+  fail_on_new_findings_only: boolean;
+  allow_accepted_risks: boolean;
+  allow_false_positives: boolean;
   schedule_cron: string;
   is_active: boolean;
+  is_default: boolean;
   created_by: number | null;
   created_by_detail: MinimalUser | null;
   created_at: string;
@@ -189,6 +195,8 @@ export interface Scan {
   error_message: string;
   scanner_metadata: Record<string, unknown>;
   quality_gate_passed: boolean | null;
+  bypass_quality_gate?: boolean;
+  bypass_reason?: string;
   finding_counts: FindingCounts;
   // Production scanning fields (see gw-backend feature/securewise-production-scans)
   progress?: number;
@@ -254,6 +262,7 @@ export interface Finding {
   recommendation: string;
   bad_code_example: string;
   fixed_code_example: string;
+  code_snippet?: string;
   evidence: Record<string, unknown>;
   fingerprint: string;
   ai_fix_suggestion: string;
@@ -263,6 +272,21 @@ export interface Finding {
   review_note: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AIFixSuggestion {
+  explanation: string;
+  why_dangerous: string;
+  fixed_code_example: string;
+  framework_guidance: string;
+  confidence: "low" | "medium" | "high";
+}
+
+export interface FindingAiSuggestionResponse {
+  ai_fix_suggestion: AIFixSuggestion | null;
+  cached: boolean;
+  engine_unavailable?: boolean;
+  detail?: string;
 }
 
 // ─── Report ────────────────────────────────────────────────────────────────
