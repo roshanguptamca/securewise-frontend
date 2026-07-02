@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { sw } from "../../api/client";
-import type { Finding, Severity, FindingStatus } from "../../types";
+import type {
+  Finding,
+  Severity,
+  FindingStatus,
+  Confidence,
+  ScanType,
+  Project,
+} from "../../types";
 import { SeverityBadge, FindingStatusBadge } from "../../components/ui/Badges";
 import {
   LoadingState,
@@ -17,6 +24,16 @@ const STATUSES: FindingStatus[] = [
   "false_positive",
   "ignored",
 ];
+const SCANNER_TYPES: ScanType[] = [
+  "sast",
+  "dast",
+  "sca",
+  "secrets",
+  "iac",
+  "container",
+  "api",
+];
+const CONFIDENCES: Confidence[] = ["very_high", "high", "medium", "low"];
 
 export default function FindingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -24,11 +41,17 @@ export default function FindingsPage() {
   const scanFilter = searchParams.get("scan") ?? "";
   const sevFilter = searchParams.get("severity") ?? "";
   const statusFilter = searchParams.get("status") ?? "";
+  const scannerFilter = searchParams.get("scanner_type") ?? "";
+  const confidenceFilter = searchParams.get("confidence") ?? "";
+  const cweFilter = searchParams.get("cwe_id") ?? "";
+  const owaspFilter = searchParams.get("owasp_category") ?? "";
 
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [cweInput, setCweInput] = useState(cweFilter);
 
   const load = () => {
     setLoading(true);
@@ -37,16 +60,31 @@ export default function FindingsPage() {
     if (scanFilter) params.scan = scanFilter;
     if (sevFilter) params.severity = sevFilter;
     if (statusFilter) params.status = statusFilter;
+    if (scannerFilter) params.scanner_type = scannerFilter;
+    if (confidenceFilter) params.confidence = confidenceFilter;
+    if (cweFilter) params.cwe_id = cweFilter;
+    if (owaspFilter) params.owasp_category = owaspFilter;
     if (search) params.search = search;
-    sw.findings
-      .list(params)
-      .then((r) => setFindings(r.data.results ?? r.data))
+    Promise.all([sw.findings.list(params), sw.projects.list()])
+      .then(([f, p]) => {
+        setFindings(f.data.results ?? f.data);
+        setProjects(p.data.results ?? p.data);
+      })
       .catch(() => setError("Failed to load findings."))
       .finally(() => setLoading(false));
   };
   useEffect(() => {
     load();
-  }, [projectFilter, scanFilter, sevFilter, statusFilter]);
+  }, [
+    projectFilter,
+    scanFilter,
+    sevFilter,
+    statusFilter,
+    scannerFilter,
+    confidenceFilter,
+    cweFilter,
+    owaspFilter,
+  ]);
 
   const setFilter = (k: string, v: string) => {
     const next = new URLSearchParams(searchParams);
@@ -62,6 +100,16 @@ export default function FindingsPage() {
   const critCount = findings.filter(
     (f) => f.severity === "critical" && f.status === "open",
   ).length;
+
+  const anyFilterActive =
+    sevFilter ||
+    statusFilter ||
+    projectFilter ||
+    scanFilter ||
+    scannerFilter ||
+    confidenceFilter ||
+    cweFilter ||
+    owaspFilter;
 
   return (
     <div>
@@ -124,7 +172,66 @@ export default function FindingsPage() {
             </option>
           ))}
         </select>
-        {(sevFilter || statusFilter || projectFilter || scanFilter) && (
+        <select
+          className="form-select"
+          style={{ width: "auto" }}
+          value={scannerFilter}
+          onChange={(e) => setFilter("scanner_type", e.target.value)}
+        >
+          <option value="">All Scanners</option>
+          {SCANNER_TYPES.map((s) => (
+            <option key={s} value={s}>
+              {s.toUpperCase()}
+            </option>
+          ))}
+        </select>
+        <select
+          className="form-select"
+          style={{ width: "auto" }}
+          value={confidenceFilter}
+          onChange={(e) => setFilter("confidence", e.target.value)}
+        >
+          <option value="">All Confidence</option>
+          {CONFIDENCES.map((c) => (
+            <option key={c} value={c}>
+              {c.replace("_", " ")}
+            </option>
+          ))}
+        </select>
+        <select
+          className="form-select"
+          style={{ width: "auto" }}
+          value={projectFilter}
+          onChange={(e) => setFilter("project", e.target.value)}
+        >
+          <option value="">All Projects</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <input
+          className="form-input"
+          style={{ width: 140 }}
+          placeholder="CWE ID…"
+          value={cweInput}
+          onChange={(e) => setCweInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && setFilter("cwe_id", cweInput)}
+          onBlur={() => setFilter("cwe_id", cweInput)}
+        />
+        <input
+          className="form-input"
+          style={{ width: 160 }}
+          placeholder="OWASP category…"
+          defaultValue={owaspFilter}
+          onKeyDown={(e) =>
+            e.key === "Enter" &&
+            setFilter("owasp_category", (e.target as HTMLInputElement).value)
+          }
+          onBlur={(e) => setFilter("owasp_category", e.target.value)}
+        />
+        {anyFilterActive && (
           <button className="btn-secondary" onClick={() => setSearchParams({})}>
             Clear filters
           </button>

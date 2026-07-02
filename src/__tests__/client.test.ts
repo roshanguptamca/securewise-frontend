@@ -16,7 +16,10 @@ vi.mock("axios", () => {
       request: { use: vi.fn() },
       response: { use: vi.fn() },
     },
-    defaults: { headers: { common: {} } },
+    defaults: {
+      headers: { common: {} },
+      baseURL: "http://localhost:8000/api",
+    },
   };
   return {
     default: {
@@ -105,6 +108,13 @@ describe("sw API helpers — URLs", () => {
     );
   });
 
+  it("sw.scans.retry(id) calls POST retry action", () => {
+    sw.scans.retry("scan-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/scans/scan-1/retry/",
+    );
+  });
+
   it("sw.scans.cancel(id) calls POST cancel action", () => {
     sw.scans.cancel("scan-1");
     expect(mockAxios.post).toHaveBeenCalledWith(
@@ -151,11 +161,57 @@ describe("sw API helpers — URLs", () => {
     );
   });
 
+  it("sw.findings.createTicket(id) calls POST create-ticket action", () => {
+    sw.findings.createTicket("f-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/findings/f-1/create-ticket/",
+    );
+  });
+
+  it("sw.findings.createPr(id) calls POST create-pr action", () => {
+    sw.findings.createPr("f-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/findings/f-1/create-pr/",
+    );
+  });
+
+  it("sw.findings.aiSuggestion(id) calls the AI suggestion endpoint", () => {
+    sw.findings.aiSuggestion("f-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/findings/f-1/ai-suggestion/",
+      {},
+      { params: {} },
+    );
+  });
+
+  it("sw.findings.aiSuggestion(id, true) passes force=true as query params", () => {
+    sw.findings.aiSuggestion("f-1", true);
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/findings/f-1/ai-suggestion/",
+      {},
+      { params: { force: true } },
+    );
+  });
+
   it("sw.reports.list() calls GET /securewise/reports/", () => {
     sw.reports.list();
     expect(mockAxios.get).toHaveBeenCalledWith("/securewise/reports/", {
       params: undefined,
     });
+  });
+
+  it("sw.reports.htmlUrl(id) returns the branded HTML endpoint", () => {
+    expect(sw.reports.htmlUrl("report-1")).toBe(
+      "http://localhost:8000/api/securewise/reports/report-1/html/",
+    );
+  });
+
+  it("sw.reports.pdf(id) calls GET pdf endpoint as a blob", () => {
+    sw.reports.pdf("report-1");
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/reports/report-1/pdf/",
+      { responseType: "blob" },
+    );
   });
 
   it("sw.gitIntegrations.test(id) calls POST test action", () => {
@@ -184,6 +240,35 @@ describe("sw API helpers — URLs", () => {
     sw.policies.list();
     expect(mockAxios.get).toHaveBeenCalledWith("/securewise/scan-policies/", {
       params: undefined,
+    });
+  });
+
+  it("sw.policies.setDefault(id) calls POST set-default action", () => {
+    sw.policies.setDefault("policy-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/scan-policies/policy-1/set-default/",
+    );
+  });
+
+  it("sw.scans.progress(id) calls GET progress action", () => {
+    sw.scans.progress("scan-1");
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/scans/scan-1/progress/",
+    );
+  });
+
+  it("sw.scans.engineResults(id) calls GET engine-results action", () => {
+    sw.scans.engineResults("scan-1");
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/scans/scan-1/engine-results/",
+    );
+  });
+
+  it("sw.reports.generate() calls POST /securewise/reports/ with report_type", () => {
+    sw.reports.generate({ title: "Q1 Report", report_type: "owasp_top10" });
+    expect(mockAxios.post).toHaveBeenCalledWith("/securewise/reports/", {
+      title: "Q1 Report",
+      report_type: "owasp_top10",
     });
   });
 });

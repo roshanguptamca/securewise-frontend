@@ -13,6 +13,48 @@ const SEV_COLORS: Record<Severity, string> = {
   info: "#22d3ee",
 };
 
+// The current CWE Top 25 Most Dangerous Software Weaknesses (2023 edition),
+// used to compute rough coverage of findings across the list.
+const CWE_TOP_25 = [
+  "CWE-787",
+  "CWE-79",
+  "CWE-89",
+  "CWE-416",
+  "CWE-78",
+  "CWE-20",
+  "CWE-125",
+  "CWE-22",
+  "CWE-352",
+  "CWE-434",
+  "CWE-862",
+  "CWE-476",
+  "CWE-287",
+  "CWE-190",
+  "CWE-502",
+  "CWE-77",
+  "CWE-119",
+  "CWE-798",
+  "CWE-918",
+  "CWE-306",
+  "CWE-362",
+  "CWE-269",
+  "CWE-94",
+  "CWE-863",
+  "CWE-276",
+];
+const OWASP_TOP_10 = [
+  "A01",
+  "A02",
+  "A03",
+  "A04",
+  "A05",
+  "A06",
+  "A07",
+  "A08",
+  "A09",
+  "A10",
+];
+
 export default function Dashboard() {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -35,6 +77,19 @@ export default function Dashboard() {
   const score = data.security_score;
   const scoreColor =
     score >= 80 ? "#22c55e" : score >= 50 ? "#eab308" : "#ef4444";
+
+  // These fields (owasp_categories_covered, cwe_ids_covered, quality_gate_pass_rate)
+  // are not guaranteed to exist on the backend yet — render defensively.
+  const owaspCovered: string[] = (data as any)?.owasp_categories_covered ?? [];
+  const cweCovered: string[] = (data as any)?.cwe_ids_covered ?? [];
+  const owaspCoverageCount = OWASP_TOP_10.filter((c) =>
+    owaspCovered.some((o) => o?.startsWith(c)),
+  ).length;
+  const cweCoverageCount = CWE_TOP_25.filter((c) =>
+    cweCovered.includes(c),
+  ).length;
+  const qualityGatePassRate: number | null =
+    (data as any)?.quality_gate_pass_rate ?? null;
 
   return (
     <div>
@@ -324,6 +379,45 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+
+          {/* Coverage & quality gate widgets */}
+          <div className="glass-card" style={{ padding: "1.25rem" }}>
+            <h2
+              style={{
+                fontSize: "0.85rem",
+                fontWeight: 700,
+                marginBottom: "0.75rem",
+              }}
+            >
+              Coverage & Quality
+            </h2>
+            <div className="flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-subtle">
+                  OWASP Top 10 coverage
+                </span>
+                <span className="text-xs font-semibold">
+                  {owaspCoverageCount} / {OWASP_TOP_10.length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-subtle">CWE Top 25 coverage</span>
+                <span className="text-xs font-semibold">
+                  {cweCoverageCount} / {CWE_TOP_25.length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-subtle">
+                  Quality gate pass rate
+                </span>
+                <span className="text-xs font-semibold">
+                  {qualityGatePassRate != null
+                    ? `${Math.round(qualityGatePassRate)}%`
+                    : "—"}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
