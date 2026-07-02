@@ -13,6 +13,15 @@ vi.mock("../api/client", () => {
   const mockProjects = [
     { id: "proj-1", name: "Web App", organization: "org-1" },
   ];
+  const mockRepositories = [
+    {
+      id: "repo-1",
+      name: "web-app",
+      organization: "org-1",
+      project: "proj-1",
+      repository_url: "https://github.com/acme/web-app",
+    },
+  ];
   return {
     sw: {
       scans: {
@@ -22,6 +31,9 @@ vi.mock("../api/client", () => {
       },
       projects: { list: vi.fn().mockResolvedValue({ data: mockProjects }) },
       orgs: { list: vi.fn().mockResolvedValue({ data: mockOrgs }) },
+      repos: {
+        list: vi.fn().mockResolvedValue({ data: mockRepositories }),
+      },
     },
   };
 });

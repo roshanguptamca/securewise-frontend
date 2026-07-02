@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { sw } from "../../api/client";
-import type { Scan, Project, Organization } from "../../types";
+import type { Scan, Project, Organization, Repository } from "../../types";
 import { ScanStatusBadge } from "../../components/ui/Badges";
 import {
   LoadingState,
@@ -17,6 +17,7 @@ export default function ScansPage() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -28,11 +29,13 @@ export default function ScansPage() {
       sw.scans.list(projectFilter ? { project: projectFilter } : {}),
       sw.projects.list(),
       sw.orgs.list(),
+      sw.repos.list(),
     ])
-      .then(([sc, pr, or]) => {
+      .then(([sc, pr, or, rp]) => {
         setScans(sc.data.results ?? sc.data);
         setProjects(pr.data.results ?? pr.data);
         setOrgs(or.data.results ?? or.data);
+        setRepositories(rp.data.results ?? rp.data);
       })
       .catch(() => setError("Failed to load scans."))
       .finally(() => setLoading(false));
@@ -218,6 +221,7 @@ export default function ScansPage() {
         <CreateScanModal
           projects={projects}
           orgs={orgs}
+          repositories={repositories}
           defaultProject={projectFilter}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
@@ -243,12 +247,14 @@ const ENGINE_OPTIONS = [
 function CreateScanModal({
   projects,
   orgs,
+  repositories,
   defaultProject,
   onClose,
   onCreated,
 }: {
   projects: Project[];
   orgs: Organization[];
+  repositories: Repository[];
   defaultProject?: string;
   onClose: () => void;
   onCreated: () => void;
@@ -256,6 +262,7 @@ function CreateScanModal({
   const [form, setForm] = useState({
     organization: orgs[0]?.id ?? "",
     project: defaultProject || projects[0]?.id || "",
+    repository: "",
     scan_type: "sast",
     branch: "",
     commit_sha: "",
@@ -274,11 +281,20 @@ function CreateScanModal({
       return setErr("Project and organization are required.");
     setSaving(true);
     try {
-      const res = await sw.scans.create(form);
+      const payload = { ...form, repository: form.repository || undefined };
+      const res = await sw.scans.create(payload);
       if (autoStart) await sw.scans.start(res.data.id);
       onCreated();
     } catch (e: any) {
-      setErr(e.response?.data?.detail ?? "Failed to create scan.");
+      const data = e.response?.data;
+      const fieldError =
+        data &&
+        typeof data === "object" &&
+        Object.values(data).find(
+          (v) => Array.isArray(v) || typeof v === "string",
+        );
+      const message = Array.isArray(fieldError) ? fieldError[0] : fieldError;
+      setErr(data?.detail ?? message ?? "Failed to create scan.");
     } finally {
       setSaving(false);
     }
@@ -288,10 +304,21 @@ function CreateScanModal({
     ? projects.filter((p) => p.organization === form.organization)
     : projects;
 
+  const filteredRepositories = form.project
+    ? repositories.filter(
+        (r) =>
+          r.project === form.project || r.organization === form.organization,
+      )
+    : repositories;
+
   const isFull = form.scan_type === "full";
   const showTargetUrl = form.scan_type === "dast" || isFull;
   const showApiSpec = form.scan_type === "api" || isFull;
   const showDockerImage = form.scan_type === "container" || isFull;
+  const needsRepository =
+    ["sast", "sca", "secrets", "iac", "container", "full"].includes(
+      form.scan_type,
+    ) && !(form.scan_type === "full" && (form.target_url || form.api_spec_url));
 
   return (
     <Modal
@@ -337,6 +364,37 @@ function CreateScanModal({
               </option>
             ))}
           </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">
+            Repository {needsRepository ? "*" : "(optional)"}
+          </label>
+          <select
+            className="form-select"
+            value={form.repository}
+            onChange={(e) => set("repository", e.target.value)}
+          >
+            <option value="">— Select a repository —</option>
+            {filteredRepositories.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} ({r.repository_url})
+              </option>
+            ))}
+          </select>
+          {filteredRepositories.length === 0 && (
+            <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+              No repositories found for this project/organization. Add one under
+              Repositories first.
+            </p>
+          )}
+          {needsRepository && !form.repository && (
+            <p
+              className="text-xs"
+              style={{ marginTop: 4, color: "var(--gw-red, #f87171)" }}
+            >
+              This scan type needs a repository, or it will find nothing.
+            </p>
+          )}
         </div>
         <div className="form-group">
           <label className="form-label" htmlFor="scan-type-select">
