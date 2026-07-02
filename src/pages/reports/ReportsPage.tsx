@@ -356,14 +356,15 @@ function CreateReportModal({
             value={form.format}
             onChange={(event) => set("format", event.target.value)}
           >
-            <option value="json">JSON</option>
-            <option value="html" disabled>
-              HTML (coming soon)
-            </option>
-            <option value="pdf" disabled>
-              PDF (coming soon)
-            </option>
+            <option value="json">JSON (raw data)</option>
+            <option value="html">HTML</option>
+            <option value="pdf">PDF</option>
           </select>
+          <p className="text-xs text-muted mt-1">
+            Every report can be viewed as branded HTML or downloaded as a
+            branded PDF from the list below regardless of this choice — this
+            just sets the report's default/primary format.
+          </p>
         </div>
       </div>
     </Modal>
