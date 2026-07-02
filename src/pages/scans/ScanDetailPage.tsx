@@ -260,7 +260,7 @@ export default function ScanDetailPage() {
       )}
 
       {/* Quality gate */}
-      {scan.quality_gate_passed !== null && (
+      {scan.quality_gate_passed !== null ? (
         <div
           className={`alert ${scan.quality_gate_passed ? "alert-success" : "alert-error"} mb-6`}
         >
@@ -270,6 +270,25 @@ export default function ScanDetailPage() {
             <strong>{scan.quality_gate_passed ? "PASSED" : "FAILED"}</strong>
           </span>
         </div>
+      ) : (
+        scan.status !== "pending" &&
+        !["queued", "running"].includes(scan.status) &&
+        !scan.status.startsWith("running_") && (
+          <div className="alert alert-info mb-6">
+            <span>ℹ️</span>
+            <span>
+              No quality gate policy is attached to this scan — findings were
+              recorded but not evaluated against pass/fail thresholds.{" "}
+              <Link
+                to="/scan-policies"
+                style={{ color: "var(--gw-indigo)", fontWeight: 600 }}
+              >
+                Configure a policy
+              </Link>{" "}
+              to enforce one.
+            </span>
+          </div>
+        )
       )}
 
       {scan.error_message && (

@@ -34,6 +34,9 @@ vi.mock("../api/client", () => {
       repos: {
         list: vi.fn().mockResolvedValue({ data: mockRepositories }),
       },
+      policies: {
+        list: vi.fn().mockResolvedValue({ data: [] }),
+      },
     },
   };
 });

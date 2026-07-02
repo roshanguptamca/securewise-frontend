@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { sw } from "../../api/client";
-import type { Scan, Project, Organization, Repository } from "../../types";
+import type {
+  Scan,
+  Project,
+  Organization,
+  Repository,
+  ScanPolicy,
+} from "../../types";
 import { ScanStatusBadge } from "../../components/ui/Badges";
 import {
   LoadingState,
@@ -18,6 +24,7 @@ export default function ScansPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [policies, setPolicies] = useState<ScanPolicy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -30,12 +37,14 @@ export default function ScansPage() {
       sw.projects.list(),
       sw.orgs.list(),
       sw.repos.list(),
+      sw.policies.list(),
     ])
-      .then(([sc, pr, or, rp]) => {
+      .then(([sc, pr, or, rp, pol]) => {
         setScans(sc.data.results ?? sc.data);
         setProjects(pr.data.results ?? pr.data);
         setOrgs(or.data.results ?? or.data);
         setRepositories(rp.data.results ?? rp.data);
+        setPolicies(pol.data.results ?? pol.data);
       })
       .catch(() => setError("Failed to load scans."))
       .finally(() => setLoading(false));
@@ -222,6 +231,7 @@ export default function ScansPage() {
           projects={projects}
           orgs={orgs}
           repositories={repositories}
+          policies={policies}
           defaultProject={projectFilter}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
@@ -248,6 +258,7 @@ function CreateScanModal({
   projects,
   orgs,
   repositories,
+  policies,
   defaultProject,
   onClose,
   onCreated,
@@ -255,6 +266,7 @@ function CreateScanModal({
   projects: Project[];
   orgs: Organization[];
   repositories: Repository[];
+  policies: ScanPolicy[];
   defaultProject?: string;
   onClose: () => void;
   onCreated: () => void;
@@ -263,6 +275,7 @@ function CreateScanModal({
     organization: orgs[0]?.id ?? "",
     project: defaultProject || projects[0]?.id || "",
     repository: "",
+    policy: "",
     scan_type: "sast",
     branch: "",
     commit_sha: "",
@@ -281,7 +294,11 @@ function CreateScanModal({
       return setErr("Project and organization are required.");
     setSaving(true);
     try {
-      const payload = { ...form, repository: form.repository || undefined };
+      const payload = {
+        ...form,
+        repository: form.repository || undefined,
+        policy: form.policy || undefined,
+      };
       const res = await sw.scans.create(payload);
       if (autoStart) await sw.scans.start(res.data.id);
       onCreated();
@@ -310,6 +327,14 @@ function CreateScanModal({
           r.project === form.project || r.organization === form.organization,
       )
     : repositories;
+
+  const filteredPolicies = form.organization
+    ? policies.filter(
+        (p) =>
+          p.organization === form.organization &&
+          (!p.project || p.project === form.project),
+      )
+    : policies;
 
   const isFull = form.scan_type === "full";
   const showTargetUrl = form.scan_type === "dast" || isFull;
@@ -395,6 +420,25 @@ function CreateScanModal({
               This scan type needs a repository, or it will find nothing.
             </p>
           )}
+        </div>
+        <div className="form-group">
+          <label className="form-label">Quality Gate Policy (optional)</label>
+          <select
+            className="form-select"
+            value={form.policy}
+            onChange={(e) => set("policy", e.target.value)}
+          >
+            <option value="">— No policy (gate not evaluated) —</option>
+            {filteredPolicies.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+            Without a policy attached, the quality gate is not evaluated —
+            findings are still recorded, but no pass/fail verdict is shown.
+          </p>
         </div>
         <div className="form-group">
           <label className="form-label" htmlFor="scan-type-select">
