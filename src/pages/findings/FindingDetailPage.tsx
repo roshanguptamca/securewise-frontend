@@ -43,6 +43,19 @@ export default function FindingDetailPage() {
     }
   };
 
+  const handleMarkFixed = async () => {
+    if (!id) return;
+    setSaving(true);
+    try {
+      await sw.findings.update(id, { status: "fixed" });
+      load();
+    } catch {
+      // noop
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return <LoadingState />;
   if (error || !finding)
     return <ErrorState message={error || "Finding not found."} />;
@@ -81,7 +94,14 @@ export default function FindingDetailPage() {
           </h1>
         </div>
         {finding.status === "open" && (
-          <div className="flex gap-3">
+          <div className="flex gap-3" style={{ flexWrap: "wrap" }}>
+            <button
+              className="btn-secondary"
+              onClick={handleMarkFixed}
+              disabled={saving}
+            >
+              ✔ Mark Fixed
+            </button>
             <button
               className="btn-secondary"
               onClick={() => setNoteModal("accept")}
@@ -93,6 +113,12 @@ export default function FindingDetailPage() {
               onClick={() => setNoteModal("fp")}
             >
               Mark False Positive
+            </button>
+            <button className="btn-secondary" disabled title="Coming soon">
+              🎫 Create Ticket
+            </button>
+            <button className="btn-secondary" disabled title="Coming soon">
+              🔀 Create PR
             </button>
           </div>
         )}
@@ -174,6 +200,24 @@ export default function FindingDetailPage() {
                   {finding.impact}
                 </p>
               )}
+            </div>
+          )}
+
+          {finding.evidence && Object.keys(finding.evidence).length > 0 && (
+            <div className="glass-card" style={{ padding: "1.25rem" }}>
+              <h2
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 700,
+                  marginBottom: "0.75rem",
+                  color: "var(--gw-text-muted)",
+                }}
+              >
+                EVIDENCE
+              </h2>
+              <pre className="code-block">
+                {JSON.stringify(finding.evidence, null, 2)}
+              </pre>
             </div>
           )}
 

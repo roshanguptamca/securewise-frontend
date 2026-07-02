@@ -198,6 +198,7 @@ function CreateReportModal({
     scan: scans[0]?.id ?? "",
     title: "",
     format: "json",
+    report_type: "security_summary",
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -208,7 +209,7 @@ function CreateReportModal({
       return setErr("Project and title are required.");
     setSaving(true);
     try {
-      await sw.reports.create({ ...form, scan: form.scan || undefined });
+      await sw.reports.generate({ ...form, scan: form.scan || undefined });
       onCreated();
     } catch (e: any) {
       setErr(e.response?.data?.detail ?? "Failed to create report.");
@@ -289,6 +290,21 @@ function CreateReportModal({
             onChange={(e) => set("title", e.target.value)}
             placeholder="Security Report – Q1 2026"
           />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Report Type</label>
+          <select
+            className="form-select"
+            value={form.report_type}
+            onChange={(e) => set("report_type", e.target.value)}
+          >
+            <option value="security_summary">Security Summary</option>
+            <option value="executive_summary">Executive Summary</option>
+            <option value="developer_remediation">Developer Remediation</option>
+            <option value="owasp_top10">OWASP Top 10</option>
+            <option value="cwe_top25">CWE Top 25</option>
+            <option value="quality_gate">Quality Gate</option>
+          </select>
         </div>
         <div className="form-group">
           <label className="form-label">Format</label>

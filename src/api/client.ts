@@ -191,6 +191,9 @@ export const sw = {
     create: (data: object) => api.post("/securewise/scans/", data),
     start: (id: string) => api.post(`/securewise/scans/${id}/start/`),
     cancel: (id: string) => api.post(`/securewise/scans/${id}/cancel/`),
+    progress: (id: string) => api.get(`/securewise/scans/${id}/progress/`),
+    engineResults: (id: string) =>
+      api.get(`/securewise/scans/${id}/engine-results/`),
   },
 
   // Findings
@@ -210,6 +213,10 @@ export const sw = {
     list: (params?: object) => api.get("/securewise/reports/", { params }),
     get: (id: string) => api.get(`/securewise/reports/${id}/`),
     create: (data: object) => api.post("/securewise/reports/", data),
+    // Alias for create — supports the richer `report_type` field
+    // (owasp_top10, cwe_top25, security_summary, executive_summary,
+    // developer_remediation, quality_gate) added alongside `format`.
+    generate: (data: object) => api.post("/securewise/reports/", data),
   },
 
   // Integrations (external tools)

@@ -186,4 +186,26 @@ describe("sw API helpers — URLs", () => {
       params: undefined,
     });
   });
+
+  it("sw.scans.progress(id) calls GET progress action", () => {
+    sw.scans.progress("scan-1");
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/scans/scan-1/progress/",
+    );
+  });
+
+  it("sw.scans.engineResults(id) calls GET engine-results action", () => {
+    sw.scans.engineResults("scan-1");
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/scans/scan-1/engine-results/",
+    );
+  });
+
+  it("sw.reports.generate() calls POST /securewise/reports/ with report_type", () => {
+    sw.reports.generate({ title: "Q1 Report", report_type: "owasp_top10" });
+    expect(mockAxios.post).toHaveBeenCalledWith("/securewise/reports/", {
+      title: "Q1 Report",
+      report_type: "owasp_top10",
+    });
+  });
 });

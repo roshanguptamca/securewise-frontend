@@ -5,7 +5,31 @@ export type Role =
 export type ScanType =
   "sast" | "dast" | "sca" | "secrets" | "iac" | "container" | "api" | "full";
 export type ScanStatus =
-  "pending" | "queued" | "running" | "completed" | "failed" | "cancelled";
+  | "pending"
+  | "queued"
+  | "cloning"
+  | "running"
+  | "running_sast"
+  | "running_sca"
+  | "running_secrets"
+  | "running_iac"
+  | "running_container"
+  | "running_api"
+  | "running_dast"
+  | "normalizing"
+  | "completed"
+  | "completed_with_warnings"
+  | "failed"
+  | "cancelled";
+export type EngineStatus =
+  "pending" | "running" | "completed" | "skipped" | "failed";
+export type ReportType =
+  | "security_summary"
+  | "executive_summary"
+  | "developer_remediation"
+  | "owasp_top10"
+  | "cwe_top25"
+  | "quality_gate";
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type Confidence = "very_high" | "high" | "medium" | "low";
 export type FindingStatus =
@@ -166,8 +190,45 @@ export interface Scan {
   scanner_metadata: Record<string, unknown>;
   quality_gate_passed: boolean | null;
   finding_counts: FindingCounts;
+  // Production scanning fields (see gw-backend feature/securewise-production-scans)
+  progress?: number;
+  selected_engines?: string[];
+  target_url?: string;
+  api_spec_url?: string;
+  docker_image?: string;
   created_at: string;
   updated_at: string;
+}
+
+// ─── Scan Engine Result ────────────────────────────────────────────────────
+
+export interface ScanEngineResult {
+  id: string;
+  engine: ScanType | string;
+  status: EngineStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  findings_count: number;
+  skipped_reason: string;
+  error_message: string;
+  raw_summary?: Record<string, unknown>;
+}
+
+// ─── Scan Progress ─────────────────────────────────────────────────────────
+
+export interface ScanProgress {
+  id: string;
+  status: ScanStatus;
+  progress: number;
+  elapsed_seconds: number;
+  findings_count: number;
+  engines: Array<{
+    engine: ScanType | string;
+    status: EngineStatus;
+    findings_count: number;
+    skipped_reason?: string;
+  }>;
 }
 
 // ─── Finding ───────────────────────────────────────────────────────────────

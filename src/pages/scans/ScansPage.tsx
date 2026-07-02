@@ -230,6 +230,16 @@ export default function ScansPage() {
   );
 }
 
+const ENGINE_OPTIONS = [
+  "sast",
+  "dast",
+  "sca",
+  "secrets",
+  "iac",
+  "container",
+  "api",
+] as const;
+
 function CreateScanModal({
   projects,
   orgs,
@@ -248,6 +258,10 @@ function CreateScanModal({
     project: defaultProject || projects[0]?.id || "",
     scan_type: "sast",
     branch: "",
+    commit_sha: "",
+    target_url: "",
+    api_spec_url: "",
+    docker_image: "",
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -273,6 +287,11 @@ function CreateScanModal({
   const filteredProjects = form.organization
     ? projects.filter((p) => p.organization === form.organization)
     : projects;
+
+  const isFull = form.scan_type === "full";
+  const showTargetUrl = form.scan_type === "dast" || isFull;
+  const showApiSpec = form.scan_type === "api" || isFull;
+  const showDockerImage = form.scan_type === "container" || isFull;
 
   return (
     <Modal
@@ -320,28 +339,34 @@ function CreateScanModal({
           </select>
         </div>
         <div className="form-group">
-          <label className="form-label">Scan Type</label>
+          <label className="form-label" htmlFor="scan-type-select">
+            Scan Type
+          </label>
           <select
+            id="scan-type-select"
             className="form-select"
             value={form.scan_type}
             onChange={(e) => set("scan_type", e.target.value)}
           >
-            {[
-              "sast",
-              "dast",
-              "sca",
-              "secrets",
-              "iac",
-              "container",
-              "api",
-              "full",
-            ].map((t) => (
+            {[...ENGINE_OPTIONS, "full"].map((t) => (
               <option key={t} value={t}>
                 {t.toUpperCase()}
               </option>
             ))}
           </select>
         </div>
+        {isFull && (
+          <div className="alert alert-info text-xs">
+            <span>🧩</span>
+            <span>
+              Full Scan will run: <strong>SAST, SCA, Secrets, IaC</strong>, plus{" "}
+              <strong>Container, API, and DAST</strong> conditionally — only
+              engines with the required configuration below (target URL, API
+              spec, Docker image) will actually execute; others are skipped with
+              a reason shown on the scan detail page.
+            </span>
+          </div>
+        )}
         <div className="form-group">
           <label className="form-label">Branch (optional)</label>
           <input
@@ -351,6 +376,60 @@ function CreateScanModal({
             placeholder="main"
           />
         </div>
+        <div className="form-group">
+          <label className="form-label">Commit SHA (optional)</label>
+          <input
+            className="form-input"
+            value={form.commit_sha}
+            onChange={(e) => set("commit_sha", e.target.value)}
+            placeholder="a1b2c3d…"
+          />
+        </div>
+        {showTargetUrl && (
+          <div className="form-group">
+            <label className="form-label" htmlFor="target-url-input">
+              Target URL (for DAST)
+            </label>
+            <input
+              id="target-url-input"
+              className="form-input"
+              value={form.target_url}
+              onChange={(e) => set("target_url", e.target.value)}
+              placeholder="https://staging.example.com"
+            />
+            <p className="text-xs mt-2" style={{ color: "#fca5a5" }}>
+              ⚠️ Only scan targets you own or are authorized to test.
+            </p>
+          </div>
+        )}
+        {showApiSpec && (
+          <div className="form-group">
+            <label className="form-label" htmlFor="api-spec-url-input">
+              OpenAPI/Swagger URL or path (for API scan)
+            </label>
+            <input
+              id="api-spec-url-input"
+              className="form-input"
+              value={form.api_spec_url}
+              onChange={(e) => set("api_spec_url", e.target.value)}
+              placeholder="https://api.example.com/openapi.json"
+            />
+          </div>
+        )}
+        {showDockerImage && (
+          <div className="form-group">
+            <label className="form-label" htmlFor="docker-image-input">
+              Docker Image (for container scan)
+            </label>
+            <input
+              id="docker-image-input"
+              className="form-input"
+              value={form.docker_image}
+              onChange={(e) => set("docker_image", e.target.value)}
+              placeholder="myorg/myapp:latest"
+            />
+          </div>
+        )}
         <label
           className="flex items-center gap-2 text-sm"
           style={{ cursor: "pointer" }}
@@ -365,11 +444,12 @@ function CreateScanModal({
           </span>
         </label>
         <div className="alert alert-info text-xs">
-          <span>🧪</span>
+          <span>🛡️</span>
           <span>
-            MVP: Runs a <strong>mock scanner</strong> that produces sample
-            findings for end-to-end flow testing. Real scanners (Semgrep, ZAP,
-            Trivy, Gitleaks) will be plugged in later.
+            Runs <strong>real scanning engines</strong> (Gitleaks for secrets,
+            plus additional analyzers) with graceful fallback engines when an
+            optional external tool isn't installed — fallback status is shown as
+            "engine unavailable" where applicable.
           </span>
         </div>
       </div>
