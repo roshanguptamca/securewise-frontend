@@ -161,6 +161,20 @@ describe("sw API helpers — URLs", () => {
     );
   });
 
+  it("sw.findings.createTicket(id) calls POST create-ticket action", () => {
+    sw.findings.createTicket("f-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/findings/f-1/create-ticket/",
+    );
+  });
+
+  it("sw.findings.createPr(id) calls POST create-pr action", () => {
+    sw.findings.createPr("f-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/findings/f-1/create-pr/",
+    );
+  });
+
   it("sw.findings.aiSuggestion(id) calls the AI suggestion endpoint", () => {
     sw.findings.aiSuggestion("f-1");
     expect(mockAxios.post).toHaveBeenCalledWith(

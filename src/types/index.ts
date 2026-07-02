@@ -266,6 +266,10 @@ export interface Finding {
   evidence: Record<string, unknown>;
   fingerprint: string;
   ai_fix_suggestion: string;
+  ticket_url: string;
+  ticket_created_at: string | null;
+  pr_url: string;
+  pr_created_at: string | null;
   reviewed_by: number | null;
   reviewed_by_detail: MinimalUser | null;
   reviewed_at: string | null;

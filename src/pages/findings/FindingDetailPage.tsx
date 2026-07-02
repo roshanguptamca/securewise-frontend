@@ -6,10 +6,13 @@ import { SeverityBadge, FindingStatusBadge } from "../../components/ui/Badges";
 import { LoadingState, ErrorState } from "../../components/ui/States";
 import { Modal } from "../../components/ui/Modal";
 
-function parseApiError(error: any): string {
+function parseApiError(error: any, rateLimitMessage?: string): string {
   const data = error?.response?.data;
   if (error?.response?.status === 429) {
-    return "You've hit the AI suggestion rate limit, try again later.";
+    return (
+      rateLimitMessage ??
+      "You've hit the rate limit for this action, try again later."
+    );
   }
   if (typeof data?.detail === "string") return data.detail;
   if (typeof data === "string") return data;
@@ -44,6 +47,15 @@ function confidenceBadgeStyle(confidence: "low" | "medium" | "high") {
   };
 }
 
+type ActionMessage = {
+  tone: "info" | "error";
+  text: string;
+  link?: {
+    href: string;
+    label: string;
+  };
+};
+
 export default function FindingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -53,7 +65,11 @@ export default function FindingDetailPage() {
   const [noteModal, setNoteModal] = useState<"accept" | "fp" | null>(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
-  const [actionMessage, setActionMessage] = useState("");
+  const [actionMessage, setActionMessage] = useState<ActionMessage | null>(
+    null,
+  );
+  const [creatingTicket, setCreatingTicket] = useState(false);
+  const [creatingPr, setCreatingPr] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiSuggestion, setAiSuggestion] =
@@ -76,20 +92,23 @@ export default function FindingDetailPage() {
   const handleAction = async (type: "accept" | "fp") => {
     if (!id) return;
     setSaving(true);
-    setActionMessage("");
+    setActionMessage(null);
     try {
       if (type === "accept") {
         await sw.findings.acceptRisk(id, note);
-        setActionMessage("Risk accepted.");
+        setActionMessage({ tone: "info", text: "Risk accepted." });
       } else {
         await sw.findings.markFalsePositive(id, note);
-        setActionMessage("Finding marked as false positive.");
+        setActionMessage({
+          tone: "info",
+          text: "Finding marked as false positive.",
+        });
       }
       setNoteModal(null);
       setNote("");
       load();
     } catch (actionError: any) {
-      setActionMessage(parseApiError(actionError));
+      setActionMessage({ tone: "error", text: parseApiError(actionError) });
     } finally {
       setSaving(false);
     }
@@ -98,15 +117,88 @@ export default function FindingDetailPage() {
   const handleMarkFixed = async () => {
     if (!id) return;
     setSaving(true);
-    setActionMessage("");
+    setActionMessage(null);
     try {
       await sw.findings.update(id, { status: "fixed" });
-      setActionMessage("Finding marked as fixed.");
+      setActionMessage({ tone: "info", text: "Finding marked as fixed." });
       load();
     } catch (actionError: any) {
-      setActionMessage(parseApiError(actionError));
+      setActionMessage({ tone: "error", text: parseApiError(actionError) });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateTicket = async () => {
+    if (!id) return;
+    setCreatingTicket(true);
+    setActionMessage(null);
+    try {
+      const response = await sw.findings.createTicket(id);
+      setFinding((current) =>
+        current
+          ? {
+              ...current,
+              ticket_url: response.data.ticket_url,
+              ticket_created_at:
+                current.ticket_created_at ?? new Date().toISOString(),
+            }
+          : current,
+      );
+      setActionMessage({
+        tone: "info",
+        text: "GitHub issue created.",
+        link: {
+          href: response.data.ticket_url,
+          label: "Open issue ↗",
+        },
+      });
+    } catch (ticketError: any) {
+      setActionMessage({
+        tone: "error",
+        text: parseApiError(
+          ticketError,
+          "You've hit the rate limit for this action, try again in a bit.",
+        ),
+      });
+    } finally {
+      setCreatingTicket(false);
+    }
+  };
+
+  const handleCreatePr = async () => {
+    if (!id) return;
+    setCreatingPr(true);
+    setActionMessage(null);
+    try {
+      const response = await sw.findings.createPr(id);
+      setFinding((current) =>
+        current
+          ? {
+              ...current,
+              pr_url: response.data.pr_url,
+              pr_created_at: current.pr_created_at ?? new Date().toISOString(),
+            }
+          : current,
+      );
+      setActionMessage({
+        tone: "info",
+        text: "GitHub pull request created.",
+        link: {
+          href: response.data.pr_url,
+          label: "Open pull request ↗",
+        },
+      });
+    } catch (prError: any) {
+      setActionMessage({
+        tone: "error",
+        text: parseApiError(
+          prError,
+          "You've hit the rate limit for this action, try again in a bit.",
+        ),
+      });
+    } finally {
+      setCreatingPr(false);
     }
   };
 
@@ -118,7 +210,12 @@ export default function FindingDetailPage() {
       const response = await sw.findings.aiSuggestion(id, force);
       setAiSuggestion(response.data);
     } catch (suggestionError: any) {
-      setAiError(parseApiError(suggestionError));
+      setAiError(
+        parseApiError(
+          suggestionError,
+          "You've hit the AI suggestion rate limit, try again later.",
+        ),
+      );
     } finally {
       setAiLoading(false);
     }
@@ -148,9 +245,23 @@ export default function FindingDetailPage() {
       </button>
 
       {actionMessage && (
-        <div className="alert alert-info mb-4" role="status">
-          <span>ℹ️</span>
-          <span>{actionMessage}</span>
+        <div
+          className={`alert ${actionMessage.tone === "error" ? "alert-error" : "alert-info"} mb-4`}
+          role="status"
+        >
+          <span>{actionMessage.tone === "error" ? "⚠️" : "ℹ️"}</span>
+          <span>
+            {actionMessage.text}{" "}
+            {actionMessage.link && (
+              <a
+                href={actionMessage.link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {actionMessage.link.label}
+              </a>
+            )}
+          </span>
         </div>
       )}
 
@@ -177,32 +288,73 @@ export default function FindingDetailPage() {
           </h1>
         </div>
         {finding.status === "open" && (
-          <div className="flex gap-3" style={{ flexWrap: "wrap" }}>
-            <button
-              className="btn-secondary"
-              onClick={handleMarkFixed}
-              disabled={saving}
-            >
-              ✔ Mark Fixed
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={() => setNoteModal("accept")}
-            >
-              Accept Risk
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={() => setNoteModal("fp")}
-            >
-              Mark False Positive
-            </button>
-            <button className="btn-secondary" disabled title="Coming soon">
-              🎫 Create Ticket
-            </button>
-            <button className="btn-secondary" disabled title="Coming soon">
-              🔀 Create PR
-            </button>
+          <div className="flex-col gap-2">
+            <div className="flex gap-3" style={{ flexWrap: "wrap" }}>
+              <button
+                className="btn-secondary"
+                onClick={handleMarkFixed}
+                disabled={saving || creatingTicket || creatingPr}
+              >
+                ✔ Mark Fixed
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => setNoteModal("accept")}
+                disabled={saving || creatingTicket || creatingPr}
+              >
+                Accept Risk
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => setNoteModal("fp")}
+                disabled={saving || creatingTicket || creatingPr}
+              >
+                Mark False Positive
+              </button>
+              {finding.ticket_url ? (
+                <a
+                  className="btn-secondary"
+                  href={finding.ticket_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  🎫 View Ticket ↗
+                </a>
+              ) : (
+                <button
+                  className="btn-secondary"
+                  onClick={handleCreateTicket}
+                  disabled={saving || creatingTicket || creatingPr}
+                >
+                  {creatingTicket ? "Creating ticket…" : "🎫 Create Ticket"}
+                </button>
+              )}
+              {finding.pr_url ? (
+                <a
+                  className="btn-secondary"
+                  href={finding.pr_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  🔀 View PR ↗
+                </a>
+              ) : (
+                <button
+                  className="btn-secondary"
+                  onClick={handleCreatePr}
+                  disabled={saving || creatingTicket || creatingPr}
+                >
+                  {creatingPr ? "Creating PR…" : "🔀 Create PR"}
+                </button>
+              )}
+            </div>
+            {(creatingTicket || creatingPr) && (
+              <div className="text-sm text-muted" role="status">
+                {creatingPr
+                  ? "Creating pull request… this can take up to 30 seconds while we prepare the branch and open it on GitHub."
+                  : "Creating ticket… this may take a few seconds while we open the GitHub issue."}
+              </div>
+            )}
           </div>
         )}
       </div>

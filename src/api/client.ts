@@ -209,6 +209,9 @@ export const sw = {
       api.post(`/securewise/findings/${id}/accept-risk/`, { note }),
     markFalsePositive: (id: string, note?: string) =>
       api.post(`/securewise/findings/${id}/mark-false-positive/`, { note }),
+    createTicket: (id: string) =>
+      api.post(`/securewise/findings/${id}/create-ticket/`),
+    createPr: (id: string) => api.post(`/securewise/findings/${id}/create-pr/`),
     aiSuggestion: (id: string, force?: boolean) =>
       api.post(
         `/securewise/findings/${id}/ai-suggestion/`,
