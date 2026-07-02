@@ -413,6 +413,43 @@ a:hover {
   color: #9ca3af;
   border: 1px solid rgba(107, 114, 128, 0.25);
 }
+.badge-cloning,
+.badge-normalizing,
+.badge-running_sast,
+.badge-running_sca,
+.badge-running_secrets,
+.badge-running_iac,
+.badge-running_container,
+.badge-running_api,
+.badge-running_dast {
+  background: rgba(34, 211, 238, 0.15);
+  color: #67e8f9;
+  border: 1px solid rgba(34, 211, 238, 0.25);
+}
+.badge-completed_with_warnings {
+  background: rgba(234, 179, 8, 0.15);
+  color: #fde047;
+  border: 1px solid rgba(234, 179, 8, 0.25);
+}
+.badge-skipped {
+  background: rgba(107, 114, 128, 0.15);
+  color: #9ca3af;
+  border: 1px solid rgba(107, 114, 128, 0.2);
+}
+
+/* Scan progress bar */
+.sw-progress-track {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.sw-progress-bar {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--gw-indigo);
+  transition: width 0.4s ease;
+}
 
 /* Misc */
 .badge-active {

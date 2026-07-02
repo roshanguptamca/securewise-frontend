@@ -1,28 +1,90 @@
-import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { sw } from "../../api/client";
-import type { Finding } from "../../types";
+import type { Finding, FindingAiSuggestionResponse } from "../../types";
 import { SeverityBadge, FindingStatusBadge } from "../../components/ui/Badges";
 import { LoadingState, ErrorState } from "../../components/ui/States";
 import { Modal } from "../../components/ui/Modal";
 
+function parseApiError(error: any, rateLimitMessage?: string): string {
+  const data = error?.response?.data;
+  if (error?.response?.status === 429) {
+    return (
+      rateLimitMessage ??
+      "You've hit the rate limit for this action, try again later."
+    );
+  }
+  if (typeof data?.detail === "string") return data.detail;
+  if (typeof data === "string") return data;
+  if (data && typeof data === "object") {
+    for (const value of Object.values(data)) {
+      if (typeof value === "string") return value;
+      if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+    }
+  }
+  return "Request failed.";
+}
+
+function confidenceBadgeStyle(confidence: "low" | "medium" | "high") {
+  if (confidence === "high") {
+    return {
+      background: "rgba(34, 197, 94, 0.18)",
+      color: "#86efac",
+      border: "1px solid rgba(34, 197, 94, 0.28)",
+    };
+  }
+  if (confidence === "medium") {
+    return {
+      background: "rgba(250, 204, 21, 0.18)",
+      color: "#fde68a",
+      border: "1px solid rgba(250, 204, 21, 0.28)",
+    };
+  }
+  return {
+    background: "rgba(248, 113, 113, 0.18)",
+    color: "#fca5a5",
+    border: "1px solid rgba(248, 113, 113, 0.28)",
+  };
+}
+
+type ActionMessage = {
+  tone: "info" | "error";
+  text: string;
+  link?: {
+    href: string;
+    label: string;
+  };
+};
+
 export default function FindingDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [finding, setFinding] = useState<Finding | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [noteModal, setNoteModal] = useState<"accept" | "fp" | null>(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [actionMessage, setActionMessage] = useState<ActionMessage | null>(
+    null,
+  );
+  const [creatingTicket, setCreatingTicket] = useState(false);
+  const [creatingPr, setCreatingPr] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [aiSuggestion, setAiSuggestion] =
+    useState<FindingAiSuggestionResponse | null>(null);
 
   const load = () => {
     if (!id) return;
+    setError("");
     sw.findings
       .get(id)
-      .then((r) => setFinding(r.data))
+      .then((response) => setFinding(response.data))
       .catch(() => setError("Failed to load finding."))
       .finally(() => setLoading(false));
   };
+
   useEffect(() => {
     load();
   }, [id]);
@@ -30,22 +92,142 @@ export default function FindingDetailPage() {
   const handleAction = async (type: "accept" | "fp") => {
     if (!id) return;
     setSaving(true);
+    setActionMessage(null);
     try {
-      if (type === "accept") await sw.findings.acceptRisk(id, note);
-      else await sw.findings.markFalsePositive(id, note);
+      if (type === "accept") {
+        await sw.findings.acceptRisk(id, note);
+        setActionMessage({ tone: "info", text: "Risk accepted." });
+      } else {
+        await sw.findings.markFalsePositive(id, note);
+        setActionMessage({
+          tone: "info",
+          text: "Finding marked as false positive.",
+        });
+      }
       setNoteModal(null);
       setNote("");
       load();
-    } catch {
-      // noop
+    } catch (actionError: any) {
+      setActionMessage({ tone: "error", text: parseApiError(actionError) });
     } finally {
       setSaving(false);
     }
   };
 
+  const handleMarkFixed = async () => {
+    if (!id) return;
+    setSaving(true);
+    setActionMessage(null);
+    try {
+      await sw.findings.update(id, { status: "fixed" });
+      setActionMessage({ tone: "info", text: "Finding marked as fixed." });
+      load();
+    } catch (actionError: any) {
+      setActionMessage({ tone: "error", text: parseApiError(actionError) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateTicket = async () => {
+    if (!id) return;
+    setCreatingTicket(true);
+    setActionMessage(null);
+    try {
+      const response = await sw.findings.createTicket(id);
+      setFinding((current) =>
+        current
+          ? {
+              ...current,
+              ticket_url: response.data.ticket_url,
+              ticket_created_at:
+                current.ticket_created_at ?? new Date().toISOString(),
+            }
+          : current,
+      );
+      setActionMessage({
+        tone: "info",
+        text: "GitHub issue created.",
+        link: {
+          href: response.data.ticket_url,
+          label: "Open issue ↗",
+        },
+      });
+    } catch (ticketError: any) {
+      setActionMessage({
+        tone: "error",
+        text: parseApiError(
+          ticketError,
+          "You've hit the rate limit for this action, try again in a bit.",
+        ),
+      });
+    } finally {
+      setCreatingTicket(false);
+    }
+  };
+
+  const handleCreatePr = async () => {
+    if (!id) return;
+    setCreatingPr(true);
+    setActionMessage(null);
+    try {
+      const response = await sw.findings.createPr(id);
+      setFinding((current) =>
+        current
+          ? {
+              ...current,
+              pr_url: response.data.pr_url,
+              pr_created_at: current.pr_created_at ?? new Date().toISOString(),
+            }
+          : current,
+      );
+      setActionMessage({
+        tone: "info",
+        text: "GitHub pull request created.",
+        link: {
+          href: response.data.pr_url,
+          label: "Open pull request ↗",
+        },
+      });
+    } catch (prError: any) {
+      setActionMessage({
+        tone: "error",
+        text: parseApiError(
+          prError,
+          "You've hit the rate limit for this action, try again in a bit.",
+        ),
+      });
+    } finally {
+      setCreatingPr(false);
+    }
+  };
+
+  const handleFetchAiSuggestion = async (force = false) => {
+    if (!id) return;
+    setAiLoading(true);
+    setAiError("");
+    try {
+      const response = await sw.findings.aiSuggestion(id, force);
+      setAiSuggestion(response.data);
+    } catch (suggestionError: any) {
+      setAiError(
+        parseApiError(
+          suggestionError,
+          "You've hit the AI suggestion rate limit, try again later.",
+        ),
+      );
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   if (loading) return <LoadingState />;
-  if (error || !finding)
+  if (error || !finding) {
     return <ErrorState message={error || "Finding not found."} />;
+  }
+
+  const snippet = finding.code_snippet?.trim();
+  const suggestion = aiSuggestion?.ai_fix_suggestion;
 
   return (
     <div>
@@ -57,6 +239,31 @@ export default function FindingDetailPage() {
           {finding.title.length > 40 ? "…" : ""}
         </span>
       </div>
+
+      <button className="btn-secondary mb-4" onClick={() => navigate(-1)}>
+        ← Back
+      </button>
+
+      {actionMessage && (
+        <div
+          className={`alert ${actionMessage.tone === "error" ? "alert-error" : "alert-info"} mb-4`}
+          role="status"
+        >
+          <span>{actionMessage.tone === "error" ? "⚠️" : "ℹ️"}</span>
+          <span>
+            {actionMessage.text}{" "}
+            {actionMessage.link && (
+              <a
+                href={actionMessage.link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {actionMessage.link.label}
+              </a>
+            )}
+          </span>
+        </div>
+      )}
 
       <div className="sw-page-header">
         <div>
@@ -81,25 +288,78 @@ export default function FindingDetailPage() {
           </h1>
         </div>
         {finding.status === "open" && (
-          <div className="flex gap-3">
-            <button
-              className="btn-secondary"
-              onClick={() => setNoteModal("accept")}
-            >
-              Accept Risk
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={() => setNoteModal("fp")}
-            >
-              Mark False Positive
-            </button>
+          <div className="flex-col gap-2">
+            <div className="flex gap-3" style={{ flexWrap: "wrap" }}>
+              <button
+                className="btn-secondary"
+                onClick={handleMarkFixed}
+                disabled={saving || creatingTicket || creatingPr}
+              >
+                ✔ Mark Fixed
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => setNoteModal("accept")}
+                disabled={saving || creatingTicket || creatingPr}
+              >
+                Accept Risk
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => setNoteModal("fp")}
+                disabled={saving || creatingTicket || creatingPr}
+              >
+                Mark False Positive
+              </button>
+              {finding.ticket_url ? (
+                <a
+                  className="btn-secondary"
+                  href={finding.ticket_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  🎫 View Ticket ↗
+                </a>
+              ) : (
+                <button
+                  className="btn-secondary"
+                  onClick={handleCreateTicket}
+                  disabled={saving || creatingTicket || creatingPr}
+                >
+                  {creatingTicket ? "Creating ticket…" : "🎫 Create Ticket"}
+                </button>
+              )}
+              {finding.pr_url ? (
+                <a
+                  className="btn-secondary"
+                  href={finding.pr_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  🔀 View PR ↗
+                </a>
+              ) : (
+                <button
+                  className="btn-secondary"
+                  onClick={handleCreatePr}
+                  disabled={saving || creatingTicket || creatingPr}
+                >
+                  {creatingPr ? "Creating PR…" : "🔀 Create PR"}
+                </button>
+              )}
+            </div>
+            {(creatingTicket || creatingPr) && (
+              <div className="text-sm text-muted" role="status">
+                {creatingPr
+                  ? "Creating pull request… this can take up to 30 seconds while we prepare the branch and open it on GitHub."
+                  : "Creating ticket… this may take a few seconds while we open the GitHub issue."}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 300px" }}>
-        {/* Main detail */}
         <div className="flex-col gap-4">
           {finding.description && (
             <div className="glass-card" style={{ padding: "1.25rem" }}>
@@ -147,6 +407,38 @@ export default function FindingDetailPage() {
             </div>
           )}
 
+          {snippet && (
+            <div className="glass-card" style={{ padding: "1.25rem" }}>
+              <h2
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 700,
+                  marginBottom: "0.75rem",
+                  color: "var(--gw-text-muted)",
+                }}
+              >
+                VULNERABLE CODE
+              </h2>
+              <pre
+                style={{
+                  margin: 0,
+                  padding: "1rem",
+                  borderRadius: 12,
+                  background: "#0f172a",
+                  color: "#e2e8f0",
+                  overflowX: "auto",
+                  fontFamily:
+                    'ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                  fontSize: "0.78rem",
+                  lineHeight: 1.6,
+                  whiteSpace: "pre",
+                }}
+              >
+                {snippet}
+              </pre>
+            </div>
+          )}
+
           {(finding.risk || finding.impact) && (
             <div className="glass-card" style={{ padding: "1.25rem" }}>
               <h2
@@ -177,6 +469,24 @@ export default function FindingDetailPage() {
             </div>
           )}
 
+          {finding.evidence && Object.keys(finding.evidence).length > 0 && (
+            <div className="glass-card" style={{ padding: "1.25rem" }}>
+              <h2
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 700,
+                  marginBottom: "0.75rem",
+                  color: "var(--gw-text-muted)",
+                }}
+              >
+                EVIDENCE
+              </h2>
+              <pre className="code-block">
+                {JSON.stringify(finding.evidence, null, 2)}
+              </pre>
+            </div>
+          )}
+
           {finding.recommendation && (
             <div
               className="glass-card"
@@ -204,6 +514,177 @@ export default function FindingDetailPage() {
             </div>
           )}
 
+          <div
+            className="glass-card"
+            style={{
+              padding: "1.25rem",
+              borderColor: "rgba(167,139,250,0.28)",
+              background: "rgba(91,33,182,0.08)",
+            }}
+          >
+            <div
+              className="flex items-center justify-between gap-3"
+              style={{ flexWrap: "wrap" }}
+            >
+              <h2
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 700,
+                  marginBottom: 0,
+                  color: "#c4b5fd",
+                }}
+              >
+                ✨ AI REMEDIATION
+              </h2>
+              {aiSuggestion && (
+                <button
+                  className="text-sm"
+                  onClick={() => handleFetchAiSuggestion(true)}
+                  disabled={aiLoading}
+                  style={{
+                    color: "#ddd6fe",
+                    background: "transparent",
+                    border: "none",
+                    cursor: aiLoading ? "default" : "pointer",
+                    padding: 0,
+                  }}
+                >
+                  🔄 Regenerate
+                </button>
+              )}
+            </div>
+            <p
+              className="text-sm text-muted"
+              style={{ marginTop: 12, marginBottom: 12 }}
+            >
+              Generate an AI-assisted fix suggestion for this finding. Verify
+              before applying.
+            </p>
+            <button
+              className="btn-secondary"
+              onClick={() => handleFetchAiSuggestion(false)}
+              disabled={aiLoading}
+            >
+              {aiLoading ? "Generating…" : "✨ Get AI Fix Suggestion"}
+            </button>
+
+            {aiError && (
+              <div className="alert alert-error mt-4">
+                <span>⚠️</span>
+                <span>{aiError}</span>
+              </div>
+            )}
+
+            {aiLoading && (
+              <div className="text-sm text-muted mt-3" role="status">
+                Generating suggestion…
+              </div>
+            )}
+
+            {aiSuggestion?.engine_unavailable && !suggestion && (
+              <div className="alert alert-info mt-4">
+                <span>ℹ️</span>
+                <span>
+                  AI recommendations are not configured in this environment.
+                </span>
+              </div>
+            )}
+
+            {suggestion && (
+              <div
+                className="glass-card mt-4"
+                style={{
+                  padding: "1.25rem",
+                  background: "rgba(15, 23, 42, 0.55)",
+                  borderColor: "rgba(167, 139, 250, 0.32)",
+                }}
+              >
+                <div
+                  className="flex items-center justify-between gap-3"
+                  style={{ flexWrap: "wrap" }}
+                >
+                  <h3
+                    style={{ fontSize: "0.95rem", fontWeight: 700, margin: 0 }}
+                  >
+                    AI-Generated Suggestion (verify before applying)
+                  </h3>
+                  <span
+                    className="badge"
+                    style={confidenceBadgeStyle(suggestion.confidence)}
+                  >
+                    {suggestion.confidence} confidence
+                  </span>
+                </div>
+                {aiSuggestion.cached && (
+                  <p className="text-xs text-muted" style={{ marginTop: 8 }}>
+                    Showing cached result.
+                  </p>
+                )}
+                <div className="flex-col gap-4" style={{ marginTop: 16 }}>
+                  {suggestion.explanation && (
+                    <div>
+                      <h4
+                        className="text-xs text-subtle"
+                        style={{ marginBottom: 6 }}
+                      >
+                        Explanation
+                      </h4>
+                      <p className="text-sm" style={{ lineHeight: 1.7 }}>
+                        {suggestion.explanation}
+                      </p>
+                    </div>
+                  )}
+                  {suggestion.why_dangerous && (
+                    <div>
+                      <h4
+                        className="text-xs text-subtle"
+                        style={{ marginBottom: 6 }}
+                      >
+                        Why dangerous
+                      </h4>
+                      <p className="text-sm" style={{ lineHeight: 1.7 }}>
+                        {suggestion.why_dangerous}
+                      </p>
+                    </div>
+                  )}
+                  {suggestion.fixed_code_example && (
+                    <div>
+                      <h4
+                        className="text-xs text-subtle"
+                        style={{ marginBottom: 6 }}
+                      >
+                        Fixed code example
+                      </h4>
+                      <pre className="code-block">
+                        {suggestion.fixed_code_example}
+                      </pre>
+                    </div>
+                  )}
+                  {suggestion.framework_guidance && (
+                    <div>
+                      <h4
+                        className="text-xs text-subtle"
+                        style={{ marginBottom: 6 }}
+                      >
+                        Framework guidance
+                      </h4>
+                      <p className="text-sm" style={{ lineHeight: 1.7 }}>
+                        {suggestion.framework_guidance}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {aiSuggestion &&
+              !suggestion &&
+              !aiSuggestion.engine_unavailable &&
+              aiSuggestion.detail && (
+                <p className="text-sm text-muted mt-4">{aiSuggestion.detail}</p>
+              )}
+          </div>
+
           {finding.bad_code_example && (
             <div className="glass-card" style={{ padding: "1.25rem" }}>
               <h2
@@ -214,7 +695,7 @@ export default function FindingDetailPage() {
                   color: "#fca5a5",
                 }}
               >
-                ❌ VULNERABLE CODE
+                ❌ VULNERABLE CODE EXAMPLE
               </h2>
               <pre className="code-block">{finding.bad_code_example}</pre>
             </div>
@@ -235,45 +716,8 @@ export default function FindingDetailPage() {
               <pre className="code-block">{finding.fixed_code_example}</pre>
             </div>
           )}
-
-          {/* AI Fix Suggestion */}
-          <div
-            className="glass-card"
-            style={{
-              padding: "1.25rem",
-              borderColor: "rgba(99,102,241,0.25)",
-              background: "rgba(99,102,241,0.06)",
-            }}
-          >
-            <h2
-              style={{
-                fontSize: "0.85rem",
-                fontWeight: 700,
-                marginBottom: "0.75rem",
-                color: "#a5b4fc",
-              }}
-            >
-              🤖 AI FIX SUGGESTION
-            </h2>
-            {finding.ai_fix_suggestion ? (
-              <p
-                className="text-sm"
-                style={{ color: "var(--gw-text-body)", lineHeight: 1.7 }}
-              >
-                {finding.ai_fix_suggestion}
-              </p>
-            ) : (
-              <p className="text-sm text-muted">
-                AI-powered fix recommendations coming soon. The system will
-                analyze this finding and suggest context-aware remediation
-                steps.
-                {/* TODO: Integrate LLM (e.g., Gemini / OpenAI) to generate fix suggestions */}
-              </p>
-            )}
-          </div>
         </div>
 
-        {/* Side metadata */}
         <div className="flex-col gap-4">
           <div className="glass-card" style={{ padding: "1.25rem" }}>
             <h2
@@ -350,7 +794,6 @@ export default function FindingDetailPage() {
         </div>
       </div>
 
-      {/* Accept risk / false positive modal */}
       {noteModal && (
         <Modal
           title={
@@ -367,7 +810,7 @@ export default function FindingDetailPage() {
               </button>
               <button
                 className="btn-primary"
-                onClick={() => handleAction(noteModal!)}
+                onClick={() => handleAction(noteModal)}
                 disabled={saving}
               >
                 {saving ? "Saving…" : "Confirm"}
@@ -380,7 +823,7 @@ export default function FindingDetailPage() {
             <textarea
               className="form-textarea"
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(event) => setNote(event.target.value)}
               placeholder="Reason for this decision…"
             />
           </div>
@@ -389,5 +832,3 @@ export default function FindingDetailPage() {
     </div>
   );
 }
-
-import React from "react";

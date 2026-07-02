@@ -5,7 +5,31 @@ export type Role =
 export type ScanType =
   "sast" | "dast" | "sca" | "secrets" | "iac" | "container" | "api" | "full";
 export type ScanStatus =
-  "pending" | "queued" | "running" | "completed" | "failed" | "cancelled";
+  | "pending"
+  | "queued"
+  | "cloning"
+  | "running"
+  | "running_sast"
+  | "running_sca"
+  | "running_secrets"
+  | "running_iac"
+  | "running_container"
+  | "running_api"
+  | "running_dast"
+  | "normalizing"
+  | "completed"
+  | "completed_with_warnings"
+  | "failed"
+  | "cancelled";
+export type EngineStatus =
+  "pending" | "running" | "completed" | "skipped" | "failed";
+export type ReportType =
+  | "security_summary"
+  | "executive_summary"
+  | "developer_remediation"
+  | "owasp_top10"
+  | "cwe_top25"
+  | "quality_gate";
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type Confidence = "very_high" | "high" | "medium" | "low";
 export type FindingStatus =
@@ -128,8 +152,14 @@ export interface ScanPolicy {
   fail_on_severity: Severity;
   max_critical: number;
   max_high: number;
+  max_medium: number;
+  fail_on_secrets: boolean;
+  fail_on_new_findings_only: boolean;
+  allow_accepted_risks: boolean;
+  allow_false_positives: boolean;
   schedule_cron: string;
   is_active: boolean;
+  is_default: boolean;
   created_by: number | null;
   created_by_detail: MinimalUser | null;
   created_at: string;
@@ -165,9 +195,48 @@ export interface Scan {
   error_message: string;
   scanner_metadata: Record<string, unknown>;
   quality_gate_passed: boolean | null;
+  bypass_quality_gate?: boolean;
+  bypass_reason?: string;
   finding_counts: FindingCounts;
+  // Production scanning fields (see gw-backend feature/securewise-production-scans)
+  progress?: number;
+  selected_engines?: string[];
+  target_url?: string;
+  api_spec_url?: string;
+  docker_image?: string;
   created_at: string;
   updated_at: string;
+}
+
+// ─── Scan Engine Result ────────────────────────────────────────────────────
+
+export interface ScanEngineResult {
+  id: string;
+  engine: ScanType | string;
+  status: EngineStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  findings_count: number;
+  skipped_reason: string;
+  error_message: string;
+  raw_summary?: Record<string, unknown>;
+}
+
+// ─── Scan Progress ─────────────────────────────────────────────────────────
+
+export interface ScanProgress {
+  id: string;
+  status: ScanStatus;
+  progress: number;
+  elapsed_seconds: number;
+  findings_count: number;
+  engines: Array<{
+    engine: ScanType | string;
+    status: EngineStatus;
+    findings_count: number;
+    skipped_reason?: string;
+  }>;
 }
 
 // ─── Finding ───────────────────────────────────────────────────────────────
@@ -193,15 +262,35 @@ export interface Finding {
   recommendation: string;
   bad_code_example: string;
   fixed_code_example: string;
+  code_snippet?: string;
   evidence: Record<string, unknown>;
   fingerprint: string;
   ai_fix_suggestion: string;
+  ticket_url: string;
+  ticket_created_at: string | null;
+  pr_url: string;
+  pr_created_at: string | null;
   reviewed_by: number | null;
   reviewed_by_detail: MinimalUser | null;
   reviewed_at: string | null;
   review_note: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AIFixSuggestion {
+  explanation: string;
+  why_dangerous: string;
+  fixed_code_example: string;
+  framework_guidance: string;
+  confidence: "low" | "medium" | "high";
+}
+
+export interface FindingAiSuggestionResponse {
+  ai_fix_suggestion: AIFixSuggestion | null;
+  cached: boolean;
+  engine_unavailable?: boolean;
+  detail?: string;
 }
 
 // ─── Report ────────────────────────────────────────────────────────────────
