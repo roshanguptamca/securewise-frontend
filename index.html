@@ -1,16 +1,53 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05070f" />
     <title>SecureWise – Application Security Platform</title>
-    <meta name="description" content="SecureWise SASP – Unified application security: SAST, DAST, SCA, secret scanning, findings, and reports." />
-    <link rel="icon" type="image/png" sizes="32x32" href="/GuideWisey_circular_favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/GuideWisey_circular_favicon-16x16.png" />
+    <meta
+      name="description"
+      content="SecureWise SASP – Unified application security: SAST, DAST, SCA, secret scanning, findings, and reports."
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/GuideWisey_circular_favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/GuideWisey_circular_favicon-16x16.png"
+    />
     <link rel="shortcut icon" href="/GuideWisey_circular_favicon.ico" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Apply saved/preferred theme ASAP to avoid a flash of the wrong theme
+         before React mounts. Full logic lives in src/theme/useTheme.ts. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("guidewisey-securewise-theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia &&
+                  window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        } catch (e) {
+          document.documentElement.dataset.theme = "dark";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

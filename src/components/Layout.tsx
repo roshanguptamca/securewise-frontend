@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import ThemeToggle from "./ThemeToggle";
 import { useAuth } from "../context/AuthContext";
 import { LoadingState } from "./ui/States";
 
@@ -92,49 +93,52 @@ export default function Layout() {
           </span>
 
           {/* Right side user pill */}
-          {user && (
-            <div className="flex items-center gap-3">
-              {/* Link back to GuideWisey — keeps brand connection */}
-              <a
-                href="https://guidewisey.com"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-subtle"
-                style={{ display: "flex", alignItems: "center", gap: 4 }}
-                title="Back to GuideWisey"
-              >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            {user && (
+              <>
+                {/* Link back to GuideWisey — keeps brand connection */}
+                <a
+                  href="https://guidewisey.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-subtle"
+                  style={{ display: "flex", alignItems: "center", gap: 4 }}
+                  title="Back to GuideWisey"
                 >
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                  <polyline points="9 22 9 12 15 12 15 22" />
-                </svg>
-                guidewisey.com
-              </a>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                  guidewisey.com
+                </a>
 
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "50%",
-                  background: "linear-gradient(135deg,#6366f1,#a855f7)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  color: "#fff",
-                }}
-              >
-                {(user.first_name?.[0] ?? user.username[0]).toUpperCase()}
-              </div>
-            </div>
-          )}
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    background: "linear-gradient(135deg,#6366f1,#a855f7)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "0.72rem",
+                    fontWeight: 700,
+                    color: "#fff",
+                  }}
+                >
+                  {(user.first_name?.[0] ?? user.username[0]).toUpperCase()}
+                </div>
+              </>
+            )}
+          </div>
         </header>
 
         {/* Page content */}
