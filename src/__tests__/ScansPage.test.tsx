@@ -39,6 +39,8 @@ const mockPolicies = vi.hoisted(() => [
   },
 ]);
 
+const mockDiscoveryPreview = vi.hoisted(() => vi.fn());
+
 vi.mock("../api/client", () => ({
   sw: {
     scans: mockScans,
@@ -46,6 +48,7 @@ vi.mock("../api/client", () => ({
     orgs: { list: vi.fn().mockResolvedValue({ data: mockOrgs }) },
     repos: {
       list: vi.fn().mockResolvedValue({ data: mockRepositories }),
+      discoveryPreview: mockDiscoveryPreview,
     },
     policies: {
       list: vi.fn().mockResolvedValue({ data: mockPolicies }),
@@ -64,6 +67,21 @@ describe("CreateScanModal", () => {
     mockScans.start.mockResolvedValue({ data: {} });
     mockScans.retry.mockResolvedValue({ data: {} });
     mockScans.cancel.mockResolvedValue({ data: {} });
+    mockDiscoveryPreview.mockResolvedValue({
+      data: {
+        project_type: "web_app",
+        detected_languages: ["python"],
+        detected_frameworks: ["django"],
+        has_dockerfile: true,
+        has_docker_compose: true,
+        can_auto_run: true,
+        requires_runtime: true,
+        candidate_ports: [8000],
+        skip_reasons: [],
+        warnings: [],
+        confidence: 1.0,
+      },
+    });
   });
 
   async function openModal() {
@@ -142,5 +160,78 @@ describe("CreateScanModal", () => {
     await openModal();
     expect(screen.queryByText(/mock scanner/i)).not.toBeInTheDocument();
     expect(screen.getByText(/real scanning engines/i)).toBeInTheDocument();
+  });
+
+  it("shows Runtime Source toggle (defaulting to Auto, hiding Target URL) when a repository is selected for a full scan", async () => {
+    await openModal();
+    const scanTypeSelect = screen.getByLabelText(
+      "Scan Type",
+    ) as HTMLSelectElement;
+    await userEvent.selectOptions(scanTypeSelect, "full");
+
+    const comboboxes = screen.getAllByRole("combobox");
+    const repoSelect = comboboxes[2];
+    await userEvent.selectOptions(repoSelect, "repo-1");
+
+    expect(screen.getByText(/Runtime Source/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Auto build & run from repository/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Target URL/i)).not.toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(mockDiscoveryPreview).toHaveBeenCalledWith("repo-1"),
+    );
+    expect(await screen.findByText(/django/i)).toBeInTheDocument();
+  });
+
+  it("reveals Target URL when the user chooses 'Use existing deployed/staging URL'", async () => {
+    await openModal();
+    const scanTypeSelect = screen.getByLabelText(
+      "Scan Type",
+    ) as HTMLSelectElement;
+    await userEvent.selectOptions(scanTypeSelect, "full");
+
+    const comboboxes = screen.getAllByRole("combobox");
+    const repoSelect = comboboxes[2];
+    await userEvent.selectOptions(repoSelect, "repo-1");
+
+    await userEvent.click(
+      screen.getByLabelText(/Use existing deployed\/staging URL/i),
+    );
+    expect(screen.getByLabelText(/^Target URL/i)).toBeInTheDocument();
+  });
+
+  it("shows a clear DAST-skip warning in the discovery preview when the app cannot be auto-run", async () => {
+    mockDiscoveryPreview.mockResolvedValue({
+      data: {
+        project_type: "library",
+        detected_languages: ["python"],
+        detected_frameworks: [],
+        has_dockerfile: false,
+        has_docker_compose: false,
+        can_auto_run: false,
+        requires_runtime: false,
+        candidate_ports: [],
+        skip_reasons: [
+          "no Dockerfile/docker-compose and no recognized start command was found",
+        ],
+        warnings: [],
+        confidence: 0.4,
+      },
+    });
+    await openModal();
+    const scanTypeSelect = screen.getByLabelText(
+      "Scan Type",
+    ) as HTMLSelectElement;
+    await userEvent.selectOptions(scanTypeSelect, "full");
+
+    const comboboxes = screen.getAllByRole("combobox");
+    const repoSelect = comboboxes[2];
+    await userEvent.selectOptions(repoSelect, "repo-1");
+
+    expect(
+      await screen.findByText(/DAST will be\s*skipped with this reason/i),
+    ).toBeInTheDocument();
   });
 });
