@@ -383,6 +383,20 @@ const ENGINE_OPTIONS = [
   "api",
 ] as const;
 
+interface DiscoveryPreview {
+  project_type: string;
+  detected_languages: string[];
+  detected_frameworks: string[];
+  has_dockerfile: boolean;
+  has_docker_compose: boolean;
+  can_auto_run: boolean;
+  requires_runtime: boolean;
+  candidate_ports: number[];
+  skip_reasons: string[];
+  warnings: string[];
+  confidence: number;
+}
+
 function CreateScanModal({
   projects,
   orgs,
@@ -408,6 +422,14 @@ function CreateScanModal({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [autoStart, setAutoStart] = useState(true);
   const [policyTouched, setPolicyTouched] = useState(false);
+  // "auto" = SecureWise discovers/builds/runs the app itself and uses the
+  // resulting local runtime URL as the DAST target. "manual" = user supplies
+  // an existing deployed/staging URL. See docs/SMART_REPO_SCAN.md.
+  const [runtimeSource, setRuntimeSource] = useState<"auto" | "manual">("auto");
+  const [discoveryPreview, setDiscoveryPreview] =
+    useState<DiscoveryPreview | null>(null);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState("");
 
   const filteredProjects = useMemo(
     () =>
@@ -498,6 +520,41 @@ function CreateScanModal({
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  const isFullOrDast = form.scan_type === "full" || form.scan_type === "dast";
+
+  // Fetch a live discovery preview whenever the selected repository changes
+  // and the user wants SecureWise to auto build & run the app. This never
+  // blocks scan creation — it's a best-effort preview only.
+  useEffect(() => {
+    if (!form.repository || runtimeSource !== "auto" || !isFullOrDast) {
+      setDiscoveryPreview(null);
+      setDiscoveryError("");
+      return;
+    }
+    let cancelled = false;
+    setDiscoveryLoading(true);
+    setDiscoveryError("");
+    sw.repos
+      .discoveryPreview(form.repository)
+      .then((res: { data: DiscoveryPreview }) => {
+        if (!cancelled) setDiscoveryPreview(res.data);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDiscoveryPreview(null);
+          setDiscoveryError(
+            "Could not preview this repository automatically — SecureWise will still attempt discovery when the scan runs.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDiscoveryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.repository, runtimeSource, isFullOrDast]);
+
   const submit = async () => {
     const nextFieldErrors: Record<string, string> = {};
 
@@ -550,7 +607,10 @@ function CreateScanModal({
   };
 
   const isFull = form.scan_type === "full";
-  const showTargetUrl = form.scan_type === "dast" || isFull;
+  const showRuntimeSourceToggle = isFullOrDast && !!form.repository;
+  const showTargetUrl =
+    (form.scan_type === "dast" || isFull) &&
+    (!showRuntimeSourceToggle || runtimeSource === "manual");
   const showApiSpec = form.scan_type === "api" || isFull;
   const showDockerImage = form.scan_type === "container" || isFull;
   const needsRepository =
@@ -720,6 +780,87 @@ function CreateScanModal({
             placeholder="a1b2c3d…"
           />
         </div>
+        {showRuntimeSourceToggle && (
+          <div className="form-group">
+            <label className="form-label">Runtime Source (for DAST)</label>
+            <div className="flex-col gap-2">
+              <label
+                className="text-xs"
+                style={{ display: "flex", alignItems: "center", gap: 8 }}
+              >
+                <input
+                  type="radio"
+                  name="runtime-source"
+                  checked={runtimeSource === "auto"}
+                  onChange={() => {
+                    setRuntimeSource("auto");
+                    set("target_url", "");
+                  }}
+                />
+                Auto build &amp; run from repository (recommended) — SecureWise
+                clones, detects the stack, and safely starts the app to discover
+                a real target automatically.
+              </label>
+              <label
+                className="text-xs"
+                style={{ display: "flex", alignItems: "center", gap: 8 }}
+              >
+                <input
+                  type="radio"
+                  name="runtime-source"
+                  checked={runtimeSource === "manual"}
+                  onChange={() => setRuntimeSource("manual")}
+                />
+                Use existing deployed/staging URL
+              </label>
+            </div>
+
+            {runtimeSource === "auto" && (
+              <div
+                className="alert alert-info text-xs"
+                style={{ marginTop: 8 }}
+              >
+                {discoveryLoading && <span>🔎 Analyzing repository…</span>}
+                {!discoveryLoading && discoveryError && (
+                  <span>{discoveryError}</span>
+                )}
+                {!discoveryLoading && discoveryPreview && (
+                  <div>
+                    <div>
+                      <strong>Detected:</strong>{" "}
+                      {discoveryPreview.detected_languages.join(", ") ||
+                        "unknown language"}{" "}
+                      {discoveryPreview.detected_frameworks.length > 0 &&
+                        `(${discoveryPreview.detected_frameworks.join(", ")})`}{" "}
+                      · {discoveryPreview.project_type}
+                    </div>
+                    <div>
+                      <strong>Dockerfile:</strong>{" "}
+                      {discoveryPreview.has_dockerfile ? "present" : "missing"}
+                      {" · "}
+                      <strong>DAST possible:</strong>{" "}
+                      {discoveryPreview.can_auto_run ? "yes" : "no"}
+                    </div>
+                    {!discoveryPreview.can_auto_run &&
+                      discoveryPreview.skip_reasons.length > 0 && (
+                        <div style={{ marginTop: 4 }}>
+                          ⚠️ {discoveryPreview.skip_reasons[0]}. DAST will be
+                          skipped with this reason; SAST/SCA/Secrets/IaC still
+                          run.
+                        </div>
+                      )}
+                  </div>
+                )}
+                {!discoveryLoading && !discoveryPreview && !discoveryError && (
+                  <span>
+                    SecureWise will discover the runtime automatically when the
+                    scan runs.
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {showTargetUrl && (
           <div className="form-group">
             <label className="form-label" htmlFor="target-url-input">

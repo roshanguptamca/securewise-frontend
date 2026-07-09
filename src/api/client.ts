@@ -171,6 +171,8 @@ export const sw = {
       api.post("/securewise/repositories/validate/", data),
     testAccess: (id: string) =>
       api.post(`/securewise/repositories/${id}/test-access/`),
+    discoveryPreview: (id: string) =>
+      api.post(`/securewise/repositories/${id}/discovery-preview/`),
   },
 
   // Scan Policies
