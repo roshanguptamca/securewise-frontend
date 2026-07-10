@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { sw } from "../../api/client";
-import type { Organization, ScanPolicy } from "../../types";
+import type { Organization, ScanPolicy, ScanPolicyTemplate } from "../../types";
 import { SeverityBadge } from "../../components/ui/Badges";
 import {
   EmptyState,
@@ -24,6 +24,8 @@ function parseApiError(error: any): string {
 
 export default function ScanPoliciesPage() {
   const [policies, setPolicies] = useState<ScanPolicy[]>([]);
+  const [templates, setTemplates] = useState<ScanPolicyTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -37,13 +39,50 @@ export default function ScanPoliciesPage() {
   const load = () => {
     setLoading(true);
     setError("");
-    Promise.all([sw.policies.list(), sw.orgs.list()])
-      .then(([policyResponse, orgResponse]) => {
+    Promise.all([sw.policies.list(), sw.orgs.list(), sw.policyTemplates.list()])
+      .then(([policyResponse, orgResponse, templateResponse]) => {
         setPolicies(policyResponse.data.results ?? policyResponse.data);
         setOrgs(orgResponse.data.results ?? orgResponse.data);
+        const nextTemplates =
+          templateResponse.data.results ?? templateResponse.data;
+        setTemplates(nextTemplates);
+        setSelectedTemplateId(
+          (current) => current || nextTemplates[0]?.id || "",
+        );
       })
       .catch(() => setError("Failed to load policies."))
       .finally(() => setLoading(false));
+  };
+
+  const handleUseTemplate = async (
+    templateId: string,
+    setAsDefault: boolean,
+  ) => {
+    const organization = orgs[0]?.id;
+    if (!organization) {
+      setActionMessage(
+        "Create or join an organization before using a template.",
+      );
+      return;
+    }
+    setActionId(`${templateId}:${setAsDefault ? "default" : "copy"}`);
+    setActionMessage("");
+    try {
+      await sw.policyTemplates.createPolicy(templateId, {
+        organization,
+        set_as_default: setAsDefault,
+      });
+      setActionMessage(
+        setAsDefault
+          ? "Template copied and set as the default policy."
+          : "Template copied into your policies.",
+      );
+      load();
+    } catch (actionError: any) {
+      setActionMessage(parseApiError(actionError));
+    } finally {
+      setActionId(null);
+    }
   };
 
   useEffect(() => {
@@ -83,6 +122,10 @@ export default function ScanPoliciesPage() {
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
+  const selectedTemplate =
+    templates.find((template) => template.id === selectedTemplateId) ??
+    templates[0];
+
   return (
     <div>
       <div className="sw-page-header">
@@ -101,6 +144,93 @@ export default function ScanPoliciesPage() {
         <div className="alert alert-info mb-4" role="status">
           <span>ℹ️</span>
           <span>{actionMessage}</span>
+        </div>
+      )}
+
+      {templates.length > 0 && (
+        <div className="mb-6">
+          <div className="section-header mb-3">
+            <div>
+              <h2>Policy Templates</h2>
+              <p className="text-sm text-muted">
+                Start with a maintained SecureWise template, then use it as-is
+                or customize a copy.
+              </p>
+            </div>
+          </div>
+          <div className="glass-card policy-template-card">
+            <div className="form-group policy-template-select">
+              <label className="form-label" htmlFor="policy-template-select">
+                Template
+              </label>
+              <select
+                id="policy-template-select"
+                className="form-select"
+                value={selectedTemplate?.id ?? ""}
+                onChange={(event) => setSelectedTemplateId(event.target.value)}
+              >
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                    {template.is_recommended ? " (recommended)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedTemplate && (
+              <div className="policy-template-detail">
+                <div className="policy-template-header">
+                  <h3 className="policy-template-title">
+                    {selectedTemplate.name}
+                  </h3>
+                  {selectedTemplate.is_recommended && (
+                    <span className="badge badge-completed">Recommended</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted mb-3 policy-template-meta">
+                  {selectedTemplate.recommended_for}
+                </p>
+                <p className="text-sm mb-3 policy-template-description">
+                  {selectedTemplate.description}
+                </p>
+                <div className="policy-template-types">
+                  {selectedTemplate.scan_types.map((type) => (
+                    <span key={type} className="badge badge-info">
+                      {type}
+                    </span>
+                  ))}
+                </div>
+                <div className="text-xs text-muted mb-3 policy-template-threshold">
+                  Fails on {selectedTemplate.fail_on_severity}+ • Critical &gt;{" "}
+                  {selectedTemplate.max_critical} • High &gt;{" "}
+                  {selectedTemplate.max_high}
+                </div>
+                <div className="policy-template-actions">
+                  <button
+                    className="btn-primary policy-template-action"
+                    onClick={() => handleUseTemplate(selectedTemplate.id, true)}
+                    disabled={actionId === `${selectedTemplate.id}:default`}
+                  >
+                    {actionId === `${selectedTemplate.id}:default`
+                      ? "Applying…"
+                      : "Use as default"}
+                  </button>
+                  <button
+                    className="btn-secondary policy-template-action"
+                    onClick={() =>
+                      handleUseTemplate(selectedTemplate.id, false)
+                    }
+                    disabled={actionId === `${selectedTemplate.id}:copy`}
+                  >
+                    {actionId === `${selectedTemplate.id}:copy`
+                      ? "Copying…"
+                      : "Copy"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

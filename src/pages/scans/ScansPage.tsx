@@ -691,7 +691,11 @@ function CreateScanModal({
             <option value="">— Select a repository —</option>
             {filteredRepositories.map((repository) => (
               <option key={repository.id} value={repository.id}>
-                {repository.name} ({repository.repository_url})
+                {repository.name} (
+                {repository.access_mode === "local_path"
+                  ? repository.local_path
+                  : repository.repository_url}
+                )
               </option>
             ))}
           </select>

@@ -188,6 +188,12 @@ export const sw = {
       api.post(`/securewise/scan-policies/${id}/set-default/`),
   },
 
+  policyTemplates: {
+    list: () => api.get("/securewise/scan-policy-templates/"),
+    createPolicy: (id: string, data: object) =>
+      api.post(`/securewise/scan-policy-templates/${id}/create-policy/`, data),
+  },
+
   // Scans
   scans: {
     list: (params?: object) => api.get("/securewise/scans/", { params }),

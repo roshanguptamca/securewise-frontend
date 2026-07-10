@@ -32,6 +32,28 @@ const mockPolicy = vi.hoisted(() => ({
 
 const mockOrgs = vi.hoisted(() => [{ id: "org-1", name: "Acme" }]);
 
+const mockTemplate = vi.hoisted(() => ({
+  id: "template-1",
+  key: "latest-market-standard",
+  name: "Latest Market Standard Scan",
+  description: "Broad market baseline.",
+  recommended_for: "Default organization policy",
+  scan_types: ["full"],
+  fail_on_severity: "high",
+  max_critical: 0,
+  max_high: 0,
+  max_medium: 10,
+  fail_on_secrets: true,
+  fail_on_new_findings_only: false,
+  allow_accepted_risks: true,
+  allow_false_positives: true,
+  is_recommended: true,
+  is_active: true,
+  sort_order: 10,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+}));
+
 const mockPolicies = vi.hoisted(() => ({
   list: vi.fn(),
   update: vi.fn(),
@@ -40,9 +62,15 @@ const mockPolicies = vi.hoisted(() => ({
   create: vi.fn(),
 }));
 
+const mockPolicyTemplates = vi.hoisted(() => ({
+  list: vi.fn(),
+  createPolicy: vi.fn(),
+}));
+
 vi.mock("../api/client", () => ({
   sw: {
     policies: mockPolicies,
+    policyTemplates: mockPolicyTemplates,
     orgs: { list: vi.fn().mockResolvedValue({ data: mockOrgs }) },
   },
 }));
@@ -53,6 +81,7 @@ describe("ScanPoliciesPage edit/delete", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPolicies.list.mockResolvedValue({ data: [mockPolicy] });
+    mockPolicyTemplates.list.mockResolvedValue({ data: [mockTemplate] });
   });
 
   it("renders Edit and Delete actions for each policy", async () => {
@@ -60,6 +89,49 @@ describe("ScanPoliciesPage edit/delete", () => {
     await waitFor(() => screen.getByText("Secure Default"));
     expect(screen.getByRole("button", { name: /Edit/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Delete/i })).toBeInTheDocument();
+    expect(screen.getByText("Latest Market Standard Scan")).toBeInTheDocument();
+  });
+
+  it("uses a template as the organization default", async () => {
+    const user = userEvent.setup();
+    mockPolicyTemplates.createPolicy.mockResolvedValue({
+      data: { ...mockPolicy, name: mockTemplate.name },
+    });
+    render(<ScanPoliciesPage />);
+    await waitFor(() => screen.getByText("Latest Market Standard Scan"));
+
+    await user.click(screen.getByRole("button", { name: /Use as default/i }));
+
+    await waitFor(() =>
+      expect(mockPolicyTemplates.createPolicy).toHaveBeenCalledWith(
+        "template-1",
+        {
+          organization: "org-1",
+          set_as_default: true,
+        },
+      ),
+    );
+  });
+
+  it("copies a template without making it default", async () => {
+    const user = userEvent.setup();
+    mockPolicyTemplates.createPolicy.mockResolvedValue({
+      data: { ...mockPolicy, name: mockTemplate.name, is_default: false },
+    });
+    render(<ScanPoliciesPage />);
+    await waitFor(() => screen.getByText("Latest Market Standard Scan"));
+
+    await user.click(screen.getByRole("button", { name: /^Copy$/i }));
+
+    await waitFor(() =>
+      expect(mockPolicyTemplates.createPolicy).toHaveBeenCalledWith(
+        "template-1",
+        {
+          organization: "org-1",
+          set_as_default: false,
+        },
+      ),
+    );
   });
 
   it("edits a policy via the Edit modal", async () => {

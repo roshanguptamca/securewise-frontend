@@ -1,10 +1,26 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
+).replace(/\/$/, "");
+
 const NAV = [
   {
     section: "Overview",
-    items: [{ to: "/dashboard", label: "Dashboard", icon: GridIcon }],
+    items: [
+      {
+        href: `${API_BASE_URL}/user-manual/`,
+        label: "User Manual",
+        icon: DocsIcon,
+      },
+      {
+        href: `${API_BASE_URL}/documentation/`,
+        label: "Developer Docs",
+        icon: DocsIcon,
+      },
+      { to: "/dashboard", label: "Dashboard", icon: GridIcon },
+    ],
   },
   {
     section: "Security",
@@ -55,7 +71,12 @@ export default function Sidebar({
           <img
             src="/guodewiseyLogo.png"
             alt="GuideWisey"
-            style={{ width: "2rem", height: "2rem", objectFit: "contain", borderRadius: "6px" }}
+            style={{
+              width: "2rem",
+              height: "2rem",
+              objectFit: "contain",
+              borderRadius: "6px",
+            }}
           />
         </div>
         <div className="sw-sidebar-logo-text">
@@ -69,19 +90,33 @@ export default function Sidebar({
         {NAV.map((group) => (
           <div key={group.section}>
             <div className="sw-sidebar-section">{group.section}</div>
-            {group.items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `sw-nav-item${isActive ? " active" : ""}`
-                }
-                onClick={onClose}
-              >
-                <item.icon />
-                {item.label}
-              </NavLink>
-            ))}
+            {group.items.map((item) =>
+              "href" in item ? (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className="sw-nav-item"
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={onClose}
+                >
+                  <item.icon />
+                  {item.label}
+                </a>
+              ) : (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `sw-nav-item${isActive ? " active" : ""}`
+                  }
+                  onClick={onClose}
+                >
+                  <item.icon />
+                  {item.label}
+                </NavLink>
+              ),
+            )}
           </div>
         ))}
       </nav>
@@ -145,6 +180,15 @@ function GridIcon() {
       <rect x="14" y="3" width="7" height="7" rx="1" />
       <rect x="3" y="14" width="7" height="7" rx="1" />
       <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+function DocsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      <path d="M8 7h8M8 11h8M8 15h5" strokeLinecap="round" />
     </svg>
   );
 }
