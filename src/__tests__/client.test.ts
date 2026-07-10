@@ -250,6 +250,24 @@ describe("sw API helpers — URLs", () => {
     );
   });
 
+  it("sw.policyTemplates.list() calls GET scan-policy-templates", () => {
+    sw.policyTemplates.list();
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/scan-policy-templates/",
+    );
+  });
+
+  it("sw.policyTemplates.createPolicy(id) calls POST create-policy action", () => {
+    sw.policyTemplates.createPolicy("template-1", {
+      organization: "org-1",
+      set_as_default: true,
+    });
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/scan-policy-templates/template-1/create-policy/",
+      { organization: "org-1", set_as_default: true },
+    );
+  });
+
   it("sw.scans.progress(id) calls GET progress action", () => {
     sw.scans.progress("scan-1");
     expect(mockAxios.get).toHaveBeenCalledWith(

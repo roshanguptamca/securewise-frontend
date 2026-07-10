@@ -125,15 +125,25 @@ export default function RepositoriesPage() {
                       >
                         {r.name}
                       </div>
-                      <a
-                        href={r.repository_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-subtle truncate"
-                        style={{ display: "block", maxWidth: 220 }}
-                      >
-                        {r.repository_url}
-                      </a>
+                      {r.access_mode === "local_path" ? (
+                        <div
+                          className="text-xs text-subtle truncate"
+                          style={{ maxWidth: 220 }}
+                          title={r.local_path}
+                        >
+                          {r.local_path}
+                        </div>
+                      ) : (
+                        <a
+                          href={r.repository_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-subtle truncate"
+                          style={{ display: "block", maxWidth: 220 }}
+                        >
+                          {r.repository_url}
+                        </a>
+                      )}
                     </td>
                     <td>
                       {r.provider ? (
@@ -150,7 +160,9 @@ export default function RepositoriesPage() {
                       <span
                         className={`badge ${r.access_mode === "public" ? "badge-public" : "badge-private"}`}
                       >
-                        {r.access_mode}
+                        {r.access_mode === "local_path"
+                          ? "local path"
+                          : r.access_mode}
                       </span>
                     </td>
                     <td>
@@ -263,6 +275,7 @@ function AddRepositoryModal({
     project: "",
     name: "",
     repository_url: "",
+    local_path: "",
     access_mode: "public",
     integration: "",
     default_branch: "main",
@@ -281,19 +294,26 @@ function AddRepositoryModal({
   };
 
   const handleValidate = async () => {
-    if (!form.repository_url) return;
+    if (form.access_mode === "local_path" && !form.local_path) return;
+    if (form.access_mode !== "local_path" && !form.repository_url) return;
     setValidating(true);
     setValidateResult(null);
     try {
       const r = await sw.repos.validate({
         repository_url: form.repository_url,
+        local_path: form.local_path,
         access_mode: form.access_mode,
         integration_id: form.integration || undefined,
       });
       setValidateResult(r.data);
-      if (r.data.provider && !form.name) {
-        const parts = form.repository_url.replace(/\.git$/, "").split("/");
-        set("name", parts[parts.length - 1] || form.repository_url);
+      if (!form.name) {
+        if (form.access_mode === "local_path") {
+          const parts = form.local_path.replace(/\/$/, "").split("/");
+          set("name", parts[parts.length - 1] || "local-repository");
+        } else if (r.data.provider) {
+          const parts = form.repository_url.replace(/\.git$/, "").split("/");
+          set("name", parts[parts.length - 1] || form.repository_url);
+        }
       }
     } catch (e: any) {
       setValidateResult({
@@ -306,19 +326,31 @@ function AddRepositoryModal({
   };
 
   const submit = async () => {
-    if (!form.repository_url || !form.organization)
-      return setErr("Repository URL and organization are required.");
+    if (!form.organization) return setErr("Organization is required.");
+    if (form.access_mode === "local_path" && !form.local_path) {
+      return setErr("Local path is required.");
+    }
+    if (form.access_mode !== "local_path" && !form.repository_url) {
+      return setErr("Repository URL is required.");
+    }
     setSaving(true);
     try {
       await sw.repos.create({
         ...form,
-        integration: form.integration || undefined,
+        repository_url:
+          form.access_mode === "local_path" ? undefined : form.repository_url,
+        integration:
+          form.access_mode === "integration" && form.integration
+            ? form.integration
+            : undefined,
         project: form.project || undefined,
       });
       onCreated();
     } catch (e: any) {
       setErr(
         e.response?.data?.repository_url?.[0] ??
+          e.response?.data?.local_path?.[0] ??
+          e.response?.data?.local_path ??
           e.response?.data?.detail ??
           "Failed to add repository.",
       );
@@ -381,19 +413,43 @@ function AddRepositoryModal({
         </div>
 
         <div className="form-group">
-          <label className="form-label">Repository URL *</label>
+          <label className="form-label">
+            {form.access_mode === "local_path"
+              ? "Local Repository Path *"
+              : "Repository URL *"}
+          </label>
           <div className="flex gap-2">
             <input
               className="form-input"
-              value={form.repository_url}
-              onChange={(e) => set("repository_url", e.target.value)}
-              placeholder="https://github.com/org/repo"
+              value={
+                form.access_mode === "local_path"
+                  ? form.local_path
+                  : form.repository_url
+              }
+              onChange={(e) =>
+                set(
+                  form.access_mode === "local_path"
+                    ? "local_path"
+                    : "repository_url",
+                  e.target.value,
+                )
+              }
+              placeholder={
+                form.access_mode === "local_path"
+                  ? "/Users/you/projects/my-app"
+                  : "https://github.com/org/repo"
+              }
               style={{ flex: 1 }}
             />
             <button
               className="btn-secondary"
               onClick={handleValidate}
-              disabled={validating || !form.repository_url}
+              disabled={
+                validating ||
+                (form.access_mode === "local_path"
+                  ? !form.local_path
+                  : !form.repository_url)
+              }
             >
               {validating ? "…" : "Validate"}
             </button>
@@ -417,7 +473,15 @@ function AddRepositoryModal({
           >
             <option value="public">Public repository</option>
             <option value="integration">Use connected Git provider</option>
+            <option value="local_path">Local path on this machine</option>
           </select>
+          {form.access_mode === "local_path" && (
+            <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+              The path must be readable by the SecureWise backend process. In
+              local development this is usually your machine; in production it
+              is the server/container filesystem.
+            </p>
+          )}
         </div>
 
         {form.access_mode === "integration" && (

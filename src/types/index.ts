@@ -39,7 +39,7 @@ export type AuthType =
   "public" | "personal_access_token" | "oauth" | "github_app";
 export type GitIntegrationStatus = "active" | "expired" | "revoked" | "error";
 export type Visibility = "public" | "private" | "internal";
-export type AccessMode = "public" | "integration";
+export type AccessMode = "public" | "integration" | "local_path";
 export type LastAccessStatus =
   "accessible" | "forbidden" | "not_found" | "error";
 
@@ -128,6 +128,7 @@ export interface Repository {
   name: string;
   provider: GitProvider | "";
   repository_url: string;
+  local_path: string;
   clone_url: string;
   default_branch: string;
   visibility: Visibility;
@@ -162,6 +163,28 @@ export interface ScanPolicy {
   is_default: boolean;
   created_by: number | null;
   created_by_detail: MinimalUser | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScanPolicyTemplate {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  recommended_for: string;
+  scan_types: ScanType[];
+  fail_on_severity: Severity;
+  max_critical: number;
+  max_high: number;
+  max_medium: number;
+  fail_on_secrets: boolean;
+  fail_on_new_findings_only: boolean;
+  allow_accepted_risks: boolean;
+  allow_false_positives: boolean;
+  is_recommended: boolean;
+  is_active: boolean;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 }

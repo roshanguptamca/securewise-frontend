@@ -187,6 +187,24 @@ describe("sw API helpers — full coverage", () => {
     );
   });
 
+  it("policyTemplates.list()", () => {
+    sw.policyTemplates.list();
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/scan-policy-templates/",
+    );
+  });
+
+  it("policyTemplates.createPolicy(id)", () => {
+    sw.policyTemplates.createPolicy("tpl-1", {
+      organization: "org-1",
+      set_as_default: true,
+    });
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/scan-policy-templates/tpl-1/create-policy/",
+      { organization: "org-1", set_as_default: true },
+    );
+  });
+
   // ── scans ─────────────────────────────────────────────────────────────────
   it("scans.get(id)", () => {
     sw.scans.get("s-1");
