@@ -21,6 +21,7 @@ const RETRYABLE_SCAN_STATUSES = [
   "cancelled",
   "completed_with_warnings",
   "completed",
+  "completed_partial",
 ] as readonly string[];
 
 function parseApiError(error: any): string {
@@ -226,7 +227,9 @@ export default function ScansPage() {
             </thead>
             <tbody>
               {scans.map((scan) => {
-                const canRetry = RETRYABLE_SCAN_STATUSES.includes(scan.status);
+                const canRetry =
+                  scan.can_retry ??
+                  RETRYABLE_SCAN_STATUSES.includes(scan.status);
                 return (
                   <tr key={scan.id}>
                     <td>

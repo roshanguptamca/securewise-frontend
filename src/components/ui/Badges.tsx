@@ -30,6 +30,7 @@ const SCAN_STATUS_CLASS: Record<ScanStatus, string> = {
   normalizing: "badge badge-normalizing",
   completed: "badge badge-completed",
   completed_with_warnings: "badge badge-completed_with_warnings",
+  completed_partial: "badge badge-completed_with_warnings",
   failed: "badge badge-failed",
   cancelled: "badge badge-cancelled",
 };

@@ -431,6 +431,11 @@ a:hover {
   color: #fde047;
   border: 1px solid rgba(234, 179, 8, 0.25);
 }
+.badge-completed_partial {
+  background: rgba(234, 179, 8, 0.15);
+  color: #fde047;
+  border: 1px solid rgba(234, 179, 8, 0.25);
+}
 .badge-skipped {
   background: rgba(107, 114, 128, 0.15);
   color: #9ca3af;

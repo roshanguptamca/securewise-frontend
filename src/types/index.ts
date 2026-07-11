@@ -19,6 +19,7 @@ export type ScanStatus =
   | "normalizing"
   | "completed"
   | "completed_with_warnings"
+  | "completed_partial"
   | "failed"
   | "cancelled";
 export type EngineStatus =
@@ -220,6 +221,7 @@ export interface Scan {
   quality_gate_passed: boolean | null;
   bypass_quality_gate?: boolean;
   bypass_reason?: string;
+  can_retry?: boolean;
   finding_counts: FindingCounts;
   // Production scanning fields (see gw-backend feature/securewise-production-scans)
   progress?: number;
@@ -229,6 +231,13 @@ export interface Scan {
   docker_image?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ScanDiagnostics {
+  log_excerpt?: string;
+  stage?: string;
+  root_cause?: string;
+  retryable?: boolean;
 }
 
 // ─── Scan Engine Result ────────────────────────────────────────────────────
@@ -243,6 +252,7 @@ export interface ScanEngineResult {
   findings_count: number;
   skipped_reason: string;
   error_message: string;
+  diagnostics?: ScanDiagnostics;
   raw_summary?: Record<string, unknown>;
 }
 
@@ -259,6 +269,7 @@ export interface ScanProgress {
     status: EngineStatus;
     findings_count: number;
     skipped_reason?: string;
+    diagnostics?: Pick<ScanDiagnostics, "log_excerpt">;
   }>;
 }
 
