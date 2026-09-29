@@ -14,10 +14,12 @@ import FindingDetailPage from "./pages/findings/FindingDetailPage";
 import ReportsPage from "./pages/reports/ReportsPage";
 import IntegrationsPage from "./pages/integrations/IntegrationsPage";
 import SettingsPage from "./pages/settings/SettingsPage";
+import AnalyticsTracker from "./analytics/AnalyticsTracker";
 
 export default function App() {
   return (
     <BrowserRouter>
+      <AnalyticsTracker />
       <AuthProvider>
         <Routes>
           <Route path="/" element={<Layout />}>
