@@ -1,4 +1,4 @@
-const DEFAULT_MEASUREMENT_ID = "G-BRT6MH6KPD";
+const DEFAULT_MEASUREMENT_ID = "G-S5ZLBGRJD4";
 const GA_SCRIPT_SRC = "https://www.googletagmanager.com/gtag/js";
 const REDACTED_SEGMENT = ":id";
 const PAGE_TITLE = "SecureWise";
