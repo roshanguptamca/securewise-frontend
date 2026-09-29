@@ -24,13 +24,13 @@ describe("GA4 analytics", () => {
   });
 
   it("loads and initializes GA4 only once", async () => {
-    vi.stubEnv("VITE_GA4_MEASUREMENT_ID", "G-BRT6MH6KPD");
+    vi.stubEnv("VITE_GA4_MEASUREMENT_ID", "G-S5ZLBGRJD4");
     const first = initializeAnalytics();
     const second = initializeAnalytics();
     const script = document.querySelector<HTMLScriptElement>("script");
 
     expect(first).toBe(second);
-    expect(script?.src).toContain("G-BRT6MH6KPD");
+    expect(script?.src).toContain("G-S5ZLBGRJD4");
 
     script?.dispatchEvent(new Event("load"));
     expect(await first).toBe(true);
@@ -39,7 +39,7 @@ describe("GA4 analytics", () => {
       ["js", expect.any(Date)],
       [
         "config",
-        "G-BRT6MH6KPD",
+        "G-S5ZLBGRJD4",
         expect.objectContaining({ send_page_view: false }),
       ],
     ]);
@@ -110,7 +110,7 @@ describe("GA4 analytics", () => {
 
     expect(await promise).toBe(true);
     expect(document.querySelector<HTMLScriptElement>("script")?.src).toContain(
-      "G-BRT6MH6KPD",
+      "G-S5ZLBGRJD4",
     );
   });
 
