@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   initializeAnalytics,
@@ -14,9 +16,41 @@ describe("GA4 analytics", () => {
     document.head.innerHTML = "";
     delete window.gtag;
     delete window.dataLayer;
+    delete window.GW_GA4_BOOTSTRAPPED_ID;
     resetAnalyticsForTests();
     window.history.replaceState(null, "", "/");
     vi.stubEnv("VITE_DEPLOYMENT_ENV", "production");
+  });
+
+  it("reuses the detector-visible Google tag without loading or configuring it twice", async () => {
+    const queuedCalls: unknown[] = [];
+    window.dataLayer = queuedCalls;
+    window.gtag = (...args: unknown[]) => queuedCalls.push(args);
+    window.GW_GA4_BOOTSTRAPPED_ID = "G-S5ZLBGRJD4";
+
+    expect(await trackPageView("/dashboard")).toBe(true);
+    expect(document.querySelectorAll("script")).toHaveLength(0);
+    expect(
+      queuedCalls.filter(
+        (entry) => Array.isArray(entry) && entry[0] === "config",
+      ),
+    ).toHaveLength(0);
+    expect(
+      queuedCalls.filter(
+        (entry) =>
+          Array.isArray(entry) &&
+          entry[0] === "event" &&
+          entry[1] === "page_view",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("keeps the default ID aligned with the detector-visible HTML tag", () => {
+    const html = readFileSync(join(process.cwd(), "index.html"), "utf8");
+    expect(
+      html.match(/googletagmanager\.com\/gtag\/js\?id=G-S5ZLBGRJD4/g),
+    ).toHaveLength(1);
+    expect(html.match(/gtag\("config", "G-S5ZLBGRJD4"/g)).toHaveLength(1);
   });
 
   afterEach(() => {
