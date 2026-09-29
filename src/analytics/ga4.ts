@@ -17,6 +17,7 @@ declare global {
   interface Window {
     dataLayer?: unknown[];
     gtag?: Gtag;
+    GW_GA4_BOOTSTRAPPED_ID?: string;
   }
 }
 
@@ -151,6 +152,13 @@ export function initializeAnalytics() {
     !isValidMeasurementId(measurementId)
   ) {
     return Promise.resolve(false);
+  }
+  if (
+    window.GW_GA4_BOOTSTRAPPED_ID === measurementId &&
+    typeof window.gtag === "function"
+  ) {
+    initialized = true;
+    return Promise.resolve(true);
   }
 
   initializationPromise = loadScript(measurementId)
