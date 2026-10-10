@@ -80,6 +80,15 @@ const currentProgress = vi.hoisted(() => {
     progress: 100,
     elapsed_seconds: 83,
     findings_count: 1,
+    worker_readiness: {
+      worker_available: false,
+      docker_ready: false,
+      trivy_available: false,
+      zap_available: false,
+      worker_id: "",
+      last_seen_at: null,
+      diagnostics: [] as string[],
+    },
     engines: [
       {
         engine: "sast",
@@ -215,6 +224,15 @@ describe("ScanDetailPage", () => {
       progress: 100,
       elapsed_seconds: 83,
       findings_count: 1,
+      worker_readiness: {
+        worker_available: false,
+        docker_ready: false,
+        trivy_available: false,
+        zap_available: false,
+        worker_id: "",
+        last_seen_at: null,
+        diagnostics: [],
+      },
     });
 
     mockScans.get.mockResolvedValue({ data: currentScan });
@@ -280,6 +298,30 @@ describe("ScanDetailPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Retry requested.")).toBeInTheDocument();
     });
+  });
+
+  it("shows worker and scanner readiness from scan progress", async () => {
+    currentProgress.worker_readiness = {
+      worker_available: true,
+      docker_ready: false,
+      trivy_available: true,
+      zap_available: false,
+      worker_id: "worker-local",
+      last_seen_at: null,
+      diagnostics: ["Docker daemon is unreachable."],
+    };
+
+    renderPage();
+
+    expect(
+      await screen.findByLabelText("Worker available"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Docker unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText("Trivy available")).toBeInTheDocument();
+    expect(screen.getByLabelText("OWASP ZAP unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText("Docker daemon is unreachable."),
+    ).toBeInTheDocument();
   });
 
   it("hides retry when can_retry is false and keeps findings visible", async () => {

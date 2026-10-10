@@ -275,6 +275,15 @@ export interface ScanProgress {
     failed_engines: number;
     total_findings: number;
   };
+  worker_readiness?: {
+    worker_available: boolean;
+    docker_ready: boolean;
+    trivy_available: boolean;
+    zap_available: boolean;
+    worker_id: string;
+    last_seen_at: string | null;
+    diagnostics: string[];
+  };
   engines: Array<{
     engine: ScanType | string;
     status: EngineStatus;
