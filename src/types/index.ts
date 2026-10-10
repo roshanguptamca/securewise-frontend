@@ -7,6 +7,7 @@ export type ScanType =
 export type ScanStatus =
   | "pending"
   | "queued"
+  | "worker_claimed"
   | "cloning"
   | "running"
   | "running_sast"
@@ -238,6 +239,9 @@ export interface ScanDiagnostics {
   stage?: string;
   root_cause?: string;
   retryable?: boolean;
+  mode?: string;
+  execution_mode?: string;
+  coverage?: Record<string, unknown>;
 }
 
 // ─── Scan Engine Result ────────────────────────────────────────────────────
@@ -264,6 +268,13 @@ export interface ScanProgress {
   progress: number;
   elapsed_seconds: number;
   findings_count: number;
+  coverage?: {
+    requested_engines: number;
+    completed_engines: number;
+    skipped_engines: number;
+    failed_engines: number;
+    total_findings: number;
+  };
   engines: Array<{
     engine: ScanType | string;
     status: EngineStatus;
@@ -271,6 +282,80 @@ export interface ScanProgress {
     skipped_reason?: string;
     diagnostics?: Pick<ScanDiagnostics, "log_excerpt">;
   }>;
+}
+
+export type PentestOutcome =
+  | "planned"
+  | "confirmed_vulnerability"
+  | "suspected_vulnerability"
+  | "inconclusive"
+  | "passed"
+  | "not_executed";
+
+export interface PentestEvidence {
+  id: number;
+  kind: string;
+  content: Record<string, unknown>;
+  sha256: string;
+  created_at: string;
+}
+
+export interface PentestExecution {
+  id: number;
+  outcome: PentestOutcome;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+  summary: string;
+  error_message: string;
+  evidence: PentestEvidence[];
+}
+
+export interface PentestTestCase {
+  id: number;
+  test_key: string;
+  title: string;
+  category: string;
+  endpoint: string;
+  method: string;
+  expected_behavior: string;
+  status: PentestOutcome;
+  severity: Severity;
+  confidence: Confidence;
+  cwe_id: string;
+  owasp_category: string;
+  recommendation: string;
+  source: string;
+  executions: PentestExecution[];
+}
+
+export interface PentestSession {
+  id: string;
+  organization: string;
+  project: string;
+  repository: string;
+  authorization_confirmed: boolean;
+  authorization_reference: string;
+  mode: "passive";
+  status:
+    | "pending"
+    | "queued"
+    | "worker_claimed"
+    | "running"
+    | "completed"
+    | "completed_with_warnings"
+    | "failed"
+    | "cancelled";
+  progress: number;
+  scope: Array<{ scheme: "http" | "https"; host: string; port: number }>;
+  test_cases: PentestTestCase[];
+  error_message: string;
+  timeout_seconds: number;
+  requests_per_minute: number;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Finding ───────────────────────────────────────────────────────────────
@@ -384,6 +469,19 @@ export interface DashboardSummary {
   security_score: number;
   severity_counts: Record<Severity, number>;
   recent_scans: Scan[];
+  owasp_top10_coverage: Record<string, number>;
+  cwe_ids_covered: string[];
+  cwe_coverage: string[];
+  security_taxonomy: {
+    dataset_version: string;
+    cwe_top25_edition: string;
+    owasp_edition: string;
+    cwe_source: string;
+  };
+  quality_gate_counts: {
+    passed: number;
+    failed: number;
+  };
   top_risky_projects: Array<{
     project__id: string;
     project__name: string;

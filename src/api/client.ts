@@ -207,6 +207,18 @@ export const sw = {
       api.get(`/securewise/scans/${id}/engine-results/`),
   },
 
+  autopentest: {
+    list: (params?: object) =>
+      api.get("/securewise/autopentest/sessions/", { params }),
+    get: (id: string) => api.get(`/securewise/autopentest/sessions/${id}/`),
+    create: (data: object) =>
+      api.post("/securewise/autopentest/sessions/", data),
+    cancel: (id: string) =>
+      api.post(`/securewise/autopentest/sessions/${id}/cancel/`),
+    report: (id: string) =>
+      api.get(`/securewise/autopentest/sessions/${id}/report/`),
+  },
+
   // Findings
   findings: {
     list: (params?: object) => api.get("/securewise/findings/", { params }),

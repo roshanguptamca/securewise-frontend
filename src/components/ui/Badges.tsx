@@ -18,6 +18,7 @@ const SEV_CLASS: Record<Severity, string> = {
 const SCAN_STATUS_CLASS: Record<ScanStatus, string> = {
   pending: "badge badge-pending",
   queued: "badge badge-queued",
+  worker_claimed: "badge badge-running",
   cloning: "badge badge-cloning",
   running: "badge badge-running",
   running_sast: "badge badge-running_sast",
