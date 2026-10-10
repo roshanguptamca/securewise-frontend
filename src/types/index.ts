@@ -347,7 +347,7 @@ export interface PentestSession {
   unified_scan: string | null;
   authorization_confirmed: boolean;
   authorization_reference: string;
-  mode: "passive" | "authenticated_api";
+  mode: "passive" | "authenticated_api" | "authenticated_browser";
   status:
     | "pending"
     | "queued"
