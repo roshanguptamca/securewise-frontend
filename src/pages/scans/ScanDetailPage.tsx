@@ -634,6 +634,35 @@ export default function ScanDetailPage() {
         </div>
       </div>
 
+      {progress?.worker_readiness && (
+        <div className="glass-card mb-4" style={{ padding: "1rem" }}>
+          <div className="text-sm font-semibold mb-2">Worker readiness</div>
+          <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+            {(
+              [
+                ["Worker", progress.worker_readiness.worker_available],
+                ["Docker", progress.worker_readiness.docker_ready],
+                ["Trivy", progress.worker_readiness.trivy_available],
+                ["OWASP ZAP", progress.worker_readiness.zap_available],
+              ] as const
+            ).map(([label, ready]) => (
+              <span
+                key={label}
+                className={`badge ${ready ? "badge-completed" : "badge-failed"}`}
+                aria-label={`${label} ${ready ? "available" : "unavailable"}`}
+              >
+                {label}: {ready ? "ready" : "unavailable"}
+              </span>
+            ))}
+          </div>
+          {progress.worker_readiness.diagnostics.length > 0 && (
+            <div className="text-xs text-muted mt-2">
+              {progress.worker_readiness.diagnostics.join(" ")}
+            </div>
+          )}
+        </div>
+      )}
+
       {partialCoverage && (
         <div className="alert alert-warning mb-6">
           <span>⚠️</span>
