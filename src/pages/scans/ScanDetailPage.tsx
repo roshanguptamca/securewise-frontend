@@ -23,6 +23,7 @@ const POLL_INTERVAL = 3000;
 const ACTIVE_STATUSES = [
   "pending",
   "queued",
+  "worker_claimed",
   "cloning",
   "running",
   "running_sast",
@@ -67,7 +68,7 @@ function engineLabel(engine: string): string {
     secrets: "Secret scan",
     iac: "IaC scan",
     container: "Container scan",
-    api: "API scan",
+    api: "API security (static OpenAPI)",
     dast: "DAST",
   };
   return labels[engine] ?? humanize(engine);
@@ -79,6 +80,23 @@ function displayList(value: unknown): string {
   }
   if (typeof value === "string" && value.trim()) return value;
   return "None detected";
+}
+
+function engineExecutionLabel(
+  engine: string,
+  rawSummary?: Record<string, unknown>,
+): string {
+  const executionMode = rawSummary?.execution_mode;
+  if (engine === "api") return "OpenAPI static analysis; no API requests sent";
+  if (executionMode === "zap_baseline") return "OWASP ZAP baseline";
+  if (executionMode === "requests_passive_fallback") {
+    return "Lightweight passive HTTP checks (ZAP unavailable or failed)";
+  }
+  const rawTool = rawSummary?.raw_tool;
+  if (typeof rawTool === "string" && rawTool && rawTool !== "none") {
+    return `${rawTool} · ${String(rawSummary?.mode ?? "mode unknown").replaceAll("_", " ")}`;
+  }
+  return "Not executed or not configured";
 }
 
 function readDiscovery(scan: Scan): Record<string, unknown> {
@@ -757,11 +775,17 @@ export default function ScanDetailPage() {
           }}
         >
           <h2 style={{ fontSize: "0.95rem", fontWeight: 700 }}>Engines</h2>
+          <p className="text-xs text-muted mt-1">
+            Coverage: {completedEngines.length}/
+            {scan.selected_engines?.length ?? engines.length} engines completed;{" "}
+            {skippedEngines.length} skipped; {failedEngines.length} failed.
+          </p>
         </div>
         <table className="sw-table">
           <thead>
             <tr>
               <th>Engine</th>
+              <th>Method</th>
               <th>Status</th>
               <th>Started</th>
               <th>Completed</th>
@@ -791,6 +815,15 @@ export default function ScanDetailPage() {
                     <span className="badge badge-info">
                       {engineLabel(String(engine.engine)).toUpperCase()}
                     </span>
+                  </td>
+                  <td
+                    className="text-muted text-xs"
+                    style={{ maxWidth: 260, whiteSpace: "normal" }}
+                  >
+                    {engineExecutionLabel(
+                      String(engine.engine),
+                      engine.raw_summary,
+                    )}
                   </td>
                   <td>
                     <EngineStatusBadge value={engine.status} />
@@ -902,7 +935,7 @@ export default function ScanDetailPage() {
         </div>
       ) : (
         scan.status !== "pending" &&
-        !["queued", "running"].includes(scan.status) &&
+        !["queued", "worker_claimed", "running"].includes(scan.status) &&
         !scan.status.startsWith("running_") && (
           <div className="alert alert-info mb-6">
             <span>ℹ️</span>
