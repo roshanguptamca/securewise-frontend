@@ -343,9 +343,11 @@ export interface PentestSession {
   organization: string;
   project: string;
   repository: string;
+  retest_of: string | null;
+  unified_scan: string | null;
   authorization_confirmed: boolean;
   authorization_reference: string;
-  mode: "passive";
+  mode: "passive" | "authenticated_api";
   status:
     | "pending"
     | "queued"
