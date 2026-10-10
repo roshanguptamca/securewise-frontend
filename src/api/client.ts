@@ -146,6 +146,19 @@ export const sw = {
       api.post(`/securewise/git-integrations/${id}/list-repositories/`),
   },
 
+  githubApp: {
+    connect: (organization: string) =>
+      api.post("/securewise/github-app/connect/", { organization }),
+    installations: () => api.get("/securewise/github-app/installations/"),
+    repositories: (installation: string) =>
+      api.post("/securewise/github-app/installations/", { installation }),
+    selectRepositories: (data: {
+      installation: string;
+      repository_ids: number[];
+      project?: string;
+    }) => api.post("/securewise/github-app/repositories/select/", data),
+  },
+
   // Projects
   projects: {
     list: (orgId?: string) =>

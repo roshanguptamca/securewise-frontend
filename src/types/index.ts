@@ -41,7 +41,7 @@ export type AuthType =
   "public" | "personal_access_token" | "oauth" | "github_app";
 export type GitIntegrationStatus = "active" | "expired" | "revoked" | "error";
 export type Visibility = "public" | "private" | "internal";
-export type AccessMode = "public" | "integration" | "local_path";
+export type AccessMode = "public" | "integration" | "github_app" | "local_path";
 export type LastAccessStatus =
   "accessible" | "forbidden" | "not_found" | "error";
 
@@ -99,6 +99,26 @@ export interface GitIntegration {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface GitHubAppInstallation {
+  id: string;
+  organization: string;
+  installation_id: number;
+  account_login: string;
+  account_type: string;
+  permissions: Record<string, string>;
+  suspended: boolean;
+  removed: boolean;
+  available: boolean;
+}
+
+export interface GitHubAppRepository {
+  id: number;
+  full_name: string;
+  private: boolean;
+  default_branch: string;
+  html_url: string;
 }
 
 // ─── Project ───────────────────────────────────────────────────────────────

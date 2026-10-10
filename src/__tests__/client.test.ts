@@ -87,6 +87,30 @@ describe("sw API helpers — URLs", () => {
     });
   });
 
+  it("sw.githubApp.connect starts installation for an organization", () => {
+    sw.githubApp.connect("org-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/github-app/connect/",
+      { organization: "org-1" },
+    );
+  });
+
+  it("sw.githubApp.selectRepositories sends only reviewed repository IDs", () => {
+    sw.githubApp.selectRepositories({
+      installation: "installation-1",
+      repository_ids: [123],
+      project: "project-1",
+    });
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/github-app/repositories/select/",
+      {
+        installation: "installation-1",
+        repository_ids: [123],
+        project: "project-1",
+      },
+    );
+  });
+
   it("sw.projects.list(orgId) passes organization param", () => {
     sw.projects.list("org-1");
     expect(mockAxios.get).toHaveBeenCalledWith("/securewise/projects/", {
