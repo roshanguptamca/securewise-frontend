@@ -338,6 +338,43 @@ export interface PentestTestCase {
   executions: PentestExecution[];
 }
 
+export interface PentestTestProposal {
+  id: string;
+  proposal_key: string;
+  test_type: string;
+  title: string;
+  endpoint: string;
+  method: string;
+  required_role: string;
+  expected_property: string;
+  safe_method: string;
+  required_test_data: Record<string, unknown>;
+  estimated_cost: {
+    read_only_requests: number;
+    browser_journeys: number;
+    provider_cost_usd: number;
+    worker_compute_cost: string;
+  };
+  parameter_schema: Record<
+    string,
+    | { type: "enum"; values: Array<string | number | boolean> }
+    | { type: "integer" | "boolean" }
+  >;
+  safe_parameters: Record<string, string | number | boolean>;
+  cwe_id: string;
+  owasp_category: string;
+  severity: Severity;
+  confidence: Confidence;
+  rationale: string;
+  limitations: string;
+  execution_mode: string;
+  executable: boolean;
+  approval_status:
+    "pending" | "approved" | "rejected" | "unsupported" | "executed";
+  source: string;
+  test_case: number | null;
+}
+
 export interface PentestSession {
   id: string;
   organization: string;
@@ -347,7 +384,12 @@ export interface PentestSession {
   unified_scan: string | null;
   authorization_confirmed: boolean;
   authorization_reference: string;
-  mode: "passive" | "authenticated_api" | "authenticated_browser";
+  mode:
+    | "passive"
+    | "authenticated_api"
+    | "authenticated_browser"
+    | "security_planning"
+    | "approved_tests";
   status:
     | "pending"
     | "queued"
@@ -360,6 +402,9 @@ export interface PentestSession {
   progress: number;
   scope: Array<{ scheme: "http" | "https"; host: string; port: number }>;
   test_cases: PentestTestCase[];
+  proposals: PentestTestProposal[];
+  security_inventory: Record<string, unknown>;
+  coverage: Record<string, number>;
   error_message: string;
   timeout_seconds: number;
   requests_per_minute: number;

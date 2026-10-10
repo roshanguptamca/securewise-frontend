@@ -215,8 +215,21 @@ export const sw = {
       api.post("/securewise/autopentest/sessions/", data),
     cancel: (id: string) =>
       api.post(`/securewise/autopentest/sessions/${id}/cancel/`),
+    executeApproved: (id: string) =>
+      api.post(`/securewise/autopentest/sessions/${id}/execute-approved/`),
     report: (id: string) =>
       api.get(`/securewise/autopentest/sessions/${id}/report/`),
+    approveProposal: (id: string) =>
+      api.post(`/securewise/autopentest/proposals/${id}/approve/`),
+    rejectProposal: (id: string) =>
+      api.post(`/securewise/autopentest/proposals/${id}/reject/`),
+    updateProposalParameters: (
+      id: string,
+      safe_parameters: Record<string, unknown>,
+    ) =>
+      api.patch(`/securewise/autopentest/proposals/${id}/`, {
+        safe_parameters,
+      }),
   },
 
   // Findings
