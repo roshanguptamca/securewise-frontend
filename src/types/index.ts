@@ -375,6 +375,17 @@ export interface PentestTestProposal {
   test_case: number | null;
 }
 
+export interface PentestRetestComparison {
+  baseline_session_id: string;
+  baseline_cases: number;
+  retest_cases: number;
+  fixed: string[];
+  still_confirmed: string[];
+  suspected: string[];
+  newly_confirmed: string[];
+  not_retested: string[];
+}
+
 export interface PentestSession {
   id: string;
   organization: string;
@@ -405,6 +416,7 @@ export interface PentestSession {
   proposals: PentestTestProposal[];
   security_inventory: Record<string, unknown>;
   coverage: Record<string, number>;
+  retest_comparison?: PentestRetestComparison | null;
   error_message: string;
   timeout_seconds: number;
   requests_per_minute: number;
