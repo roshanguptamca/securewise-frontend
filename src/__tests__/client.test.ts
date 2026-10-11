@@ -111,6 +111,42 @@ describe("sw API helpers — URLs", () => {
     );
   });
 
+  it("registers application targets and requests ownership challenges", () => {
+    sw.applicationTargets.register({
+      project: "project-1",
+      url: "https://app.example.test/",
+      verification_method: "dns_txt",
+    });
+    sw.applicationTargets.action("target-1", "verify", {
+      challenge: "challenge-1",
+    });
+    expect(mockAxios.post).toHaveBeenNthCalledWith(
+      1,
+      "/securewise/application-targets/",
+      {
+        project: "project-1",
+        url: "https://app.example.test/",
+        verification_method: "dns_txt",
+      },
+    );
+    expect(mockAxios.post).toHaveBeenNthCalledWith(
+      2,
+      "/securewise/application-targets/target-1/verify/",
+      { challenge: "challenge-1" },
+    );
+  });
+
+  it("lists and revokes application testing authorizations", () => {
+    sw.testingAuthorizations.list();
+    sw.testingAuthorizations.revoke("authorization-1");
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/testing-authorizations/",
+    );
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/testing-authorizations/authorization-1/revoke/",
+    );
+  });
+
   it("sw.projects.list(orgId) passes organization param", () => {
     sw.projects.list("org-1");
     expect(mockAxios.get).toHaveBeenCalledWith("/securewise/projects/", {

@@ -159,6 +159,26 @@ export const sw = {
     }) => api.post("/securewise/github-app/repositories/select/", data),
   },
 
+  applicationTargets: {
+    list: () => api.get("/securewise/application-targets/"),
+    register: (data: {
+      project: string;
+      url: string;
+      verification_method: "dns_txt" | "https_well_known";
+    }) => api.post("/securewise/application-targets/", data),
+    action: (
+      id: string,
+      action: "challenge" | "verify" | "revoke-ownership" | "authorize",
+      data: object = {},
+    ) => api.post(`/securewise/application-targets/${id}/${action}/`, data),
+  },
+
+  testingAuthorizations: {
+    list: () => api.get("/securewise/testing-authorizations/"),
+    revoke: (id: string) =>
+      api.post(`/securewise/testing-authorizations/${id}/revoke/`),
+  },
+
   // Projects
   projects: {
     list: (orgId?: string) =>
