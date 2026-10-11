@@ -655,6 +655,48 @@ export default function ScanDetailPage() {
               </span>
             ))}
           </div>
+          <div className="text-xs text-muted mt-2">
+            Runner: {progress.worker_readiness.runner_type || "unavailable"}
+            {progress.worker_readiness.architecture
+              ? ` (${progress.worker_readiness.architecture})`
+              : ""}
+            {progress.worker_readiness.runners.length > 0 &&
+              ` · Fleet: ${progress.worker_readiness.runners.reduce((total, runner) => total + runner.online, 0)} online, ${progress.worker_readiness.runners.reduce((total, runner) => total + runner.idle, 0)} idle`}
+          </div>
+          {Object.keys(progress.worker_readiness.scanner_versions).length >
+            0 && (
+            <div className="text-xs text-muted mt-1">
+              Scanner versions:{" "}
+              {Object.entries(progress.worker_readiness.scanner_versions)
+                .map(([name, version]) => `${name} ${version}`)
+                .join(", ")}
+            </div>
+          )}
+          {progress.worker_readiness.runners.length > 0 && (
+            <ul className="text-xs text-muted mt-1">
+              {progress.worker_readiness.runners.map((runner) => (
+                <li key={`${runner.runner_type}-${runner.architecture}`}>
+                  {runner.runner_type} {runner.architecture}: {runner.online}{" "}
+                  online / {runner.idle} idle ·{" "}
+                  {runner.capabilities
+                    .filter((capability) =>
+                      [
+                        "sast",
+                        "sca",
+                        "secrets",
+                        "iac",
+                        "container",
+                        "dast",
+                        "api",
+                        "playwright",
+                        "docker_daemon",
+                      ].includes(capability),
+                    )
+                    .join(", ") || "no scanner capabilities"}
+                </li>
+              ))}
+            </ul>
+          )}
           {progress.worker_readiness.diagnostics.length > 0 && (
             <div className="text-xs text-muted mt-2">
               {progress.worker_readiness.diagnostics.join(" ")}

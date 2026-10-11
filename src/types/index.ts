@@ -340,7 +340,17 @@ export interface ScanProgress {
     docker_ready: boolean;
     trivy_available: boolean;
     zap_available: boolean;
-    worker_id: string;
+    runner_type: string;
+    architecture: string;
+    scanner_versions: Record<string, string>;
+    runners: Array<{
+      runner_type: string;
+      architecture: string;
+      online: number;
+      idle: number;
+      capabilities: string[];
+      scanner_versions: Record<string, string[]>;
+    }>;
     last_seen_at: string | null;
     diagnostics: string[];
   };
