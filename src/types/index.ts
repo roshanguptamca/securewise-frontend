@@ -121,6 +121,46 @@ export interface GitHubAppRepository {
   html_url: string;
 }
 
+export interface SecureWiseApplicationTarget {
+  id: string;
+  organization: string;
+  project: string;
+  url: string;
+  hostname: string;
+  port: number;
+  base_path: string;
+  verified: boolean;
+  verified_at: string | null;
+  ownership_revoked_at: string | null;
+  created_at: string;
+}
+
+export interface SecureWiseOwnershipChallenge {
+  id: string;
+  method: "dns_txt" | "https_well_known";
+  token: string;
+  expires_at: string;
+  dns_name: string;
+  https_path: string;
+}
+
+export interface SecureWiseTestingAuthorization {
+  id: string;
+  organization: string;
+  target: string;
+  authorized_hosts: string[];
+  allowed_ports: number[];
+  allowed_paths: string[];
+  excluded_paths: string[];
+  approved_scan_methods: string[];
+  testing_environment: "production" | "staging" | "test";
+  starts_at: string;
+  expires_at: string;
+  approved_by: number | null;
+  revoked_at: string | null;
+  active: boolean;
+}
+
 // ─── Project ───────────────────────────────────────────────────────────────
 
 export interface Project {

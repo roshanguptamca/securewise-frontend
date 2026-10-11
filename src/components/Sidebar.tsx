@@ -26,6 +26,7 @@ const NAV = [
     section: "Security",
     items: [
       { to: "/projects", label: "Projects", icon: FolderIcon },
+      { to: "/applications", label: "Applications", icon: ShieldIcon },
       { to: "/scans", label: "Scans", icon: ScanIcon },
       { to: "/autopentest", label: "AutoPentest", icon: ShieldIcon },
       { to: "/findings", label: "Findings", icon: BugIcon },
