@@ -34,7 +34,7 @@ const BASE_URL = ensureNonProductionDevelopmentUrl(
 const LOGIN_URL = ensureNonProductionDevelopmentUrl(
   import.meta.env.VITE_LOGIN_URL ??
     (import.meta.env.DEV
-      ? "http://localhost:5173/login"
+      ? "http://localhost:3000/login"
       : "https://www.guidewisey.com/login"),
   "VITE_LOGIN_URL",
 );
@@ -56,6 +56,7 @@ const api = axios.create({
 // token directly in its JSON body for exactly this reason, so we fetch it
 // from there instead of relying on a readable cookie.
 let cachedCsrfToken = "";
+let loginRedirectStarted = false;
 
 function readCsrfCookie(): string {
   return (
@@ -69,6 +70,7 @@ function readCsrfCookie(): string {
 // Exposed for tests only — resets the module-level cache between test cases.
 export function __resetCsrfCacheForTests(): void {
   cachedCsrfToken = "";
+  loginRedirectStarted = false;
 }
 
 async function fetchCsrfToken(): Promise<string> {
@@ -120,12 +122,27 @@ api.interceptors.response.use(
       }
     }
 
-    if (status === 401 || status === 403) {
+    const isAuthenticationCheck = (config?.url || "")
+      .replace(/\/+$/, "")
+      .endsWith("/accounts/me");
+    const responseBody = err.response?.data;
+    const authenticationRequired =
+      typeof responseBody === "object" &&
+      responseBody !== null &&
+      "detail" in responseBody &&
+      responseBody.detail === "Authentication credentials were not provided.";
+    if (
+      status === 401 ||
+      (status === 403 && (isAuthenticationCheck || authenticationRequired))
+    ) {
       // A logout call failing (even after the CSRF retry above) must never bounce the
       // user to the login screen — AuthContext's own logout() catch/finally handles
       // clearing local state and redirecting to the GuideWisey homepage instead.
       const isLogoutCall = (config?.url || "").includes("/accounts/logout/");
-      if (!isLogoutCall) {
+      if (!isLogoutCall && !loginRedirectStarted) {
+        // Redirect once: concurrent 401/403 responses (e.g. StrictMode's double
+        // effect) would otherwise start competing navigations that can cancel each other.
+        loginRedirectStarted = true;
         // Redirect to GuideWisey main portal login, passing return URL
         const returnTo = encodeURIComponent(window.location.href);
         window.location.href = `${LOGIN_URL}?next=${returnTo}`;

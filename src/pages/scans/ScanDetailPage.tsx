@@ -11,9 +11,11 @@ import {
   SeverityBadge,
 } from "../../components/ui/Badges";
 import { ErrorState, LoadingState } from "../../components/ui/States";
+import { isPassiveWebsiteScan } from "./passiveWebsite";
 import type {
   Finding,
   Scan,
+  SecureWiseTestingAuthorization,
   ScanDiagnostics,
   ScanEngineResult,
   ScanProgress,
@@ -250,6 +252,7 @@ function buildEngines(
 function buildTimeline(
   scan: Scan,
   engines: ReturnType<typeof buildEngines>,
+  passiveCheck = false,
 ): Array<{ timestamp: string; title: string; detail: string }> {
   const events: Array<{ timestamp: string; title: string; detail: string }> =
     [];
@@ -297,7 +300,7 @@ function buildTimeline(
     events.push({
       timestamp: scan.completed_at,
       title:
-        scan.status === "completed_partial"
+        scan.status === "completed_partial" && !passiveCheck
           ? "Scan completed with partial coverage"
           : "Scan completed",
       detail: `Status: ${scan.status}`,
@@ -450,6 +453,56 @@ export default function ScanDetailPage() {
     await runScanAction(() => sw.scans.retry(id), "Retry requested.");
   };
 
+  const handleRetest = async () => {
+    if (!scan) return;
+    setActionLoading(true);
+    setActionMessage("");
+    try {
+      const { data } = await sw.testingAuthorizations.list();
+      const authorizations: SecureWiseTestingAuthorization[] = Array.isArray(
+        data,
+      )
+        ? data
+        : (data?.results ?? []);
+      const authorization = authorizations.find(
+        (item) => item.id === scan.testing_authorization,
+      );
+      if (
+        !authorization ||
+        !authorization.active ||
+        !authorization.approved_scan_methods.includes("passive_http")
+      ) {
+        setActionMessage(
+          "Retest not started: the testing authorization for this website has expired or was revoked. Renew it under Application Targets, then retest.",
+        );
+        return;
+      }
+      const created = await sw.scans.create({
+        organization: scan.organization,
+        project: scan.project,
+        scan_type: "dast",
+        target_url: scan.target_url,
+        testing_authorization: authorization.id,
+        selected_engines: ["dast"],
+      });
+      const newId: string = created.data.id;
+      try {
+        await sw.scans.start(newId);
+      } catch (startError: any) {
+        await sw.scans.cancel(newId).catch(() => undefined);
+        setActionMessage(
+          `Retest not started: ${parseApiError(startError)} The unstarted retest was cancelled.`,
+        );
+        return;
+      }
+      navigate(`/scans/${newId}`);
+    } catch (retestError: any) {
+      setActionMessage(parseApiError(retestError));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleDownloadPartialReport = async () => {
     if (!scan || !id) return;
     await runScanAction(async () => {
@@ -511,7 +564,8 @@ export default function ScanDetailPage() {
     progress?.findings_count ?? scan.finding_counts?.total ?? 0;
   const engines = buildEngines(progress, engineResults);
   const discoverySummary = buildDiscoverySummary(scan);
-  const timeline = buildTimeline(scan, engines);
+  const passiveCheck = isPassiveWebsiteScan(scan, engines);
+  const timeline = buildTimeline(scan, engines, passiveCheck);
   const failedEngines = engines.filter((row) => row.status === "failed");
   const skippedEngines = engines.filter((row) => row.status === "skipped");
   const completedEngines = engines.filter((row) => row.status === "completed");
@@ -568,7 +622,7 @@ export default function ScanDetailPage() {
     scan.status === "completed_partial" || failedEngines.length > 0
       ? "Retry Failed Stages"
       : "Retry Scan";
-  const partialCoverage = scan.status === "completed_partial";
+  const partialCoverage = scan.status === "completed_partial" && !passiveCheck;
 
   return (
     <div>
@@ -595,10 +649,12 @@ export default function ScanDetailPage() {
             className="flex items-center gap-3 mb-1"
             style={{ flexWrap: "wrap" }}
           >
-            <h1 className="sw-page-title">Scan Detail</h1>
+            <h1 className="sw-page-title">
+              {passiveCheck ? "Passive Website Security Check" : "Scan Detail"}
+            </h1>
             <ScanStatusBadge value={scan.status} />
             <span className="badge badge-info">
-              {scan.scan_type.toUpperCase()}
+              {passiveCheck ? "PASSIVE" : scan.scan_type.toUpperCase()}
             </span>
           </div>
           <p className="sw-page-subtitle">
@@ -621,7 +677,17 @@ export default function ScanDetailPage() {
               {actionLoading ? "Starting..." : "Start Scan"}
             </button>
           )}
-          {canRetry && (
+          {passiveCheck && !isActive && (
+            <button
+              className="btn-primary"
+              onClick={handleRetest}
+              disabled={actionLoading}
+            >
+              <RotateCcw size={14} />
+              {actionLoading ? "Starting retest..." : "Retest"}
+            </button>
+          )}
+          {canRetry && !passiveCheck && (
             <button
               className="btn-secondary"
               onClick={handleRetry}
@@ -633,6 +699,31 @@ export default function ScanDetailPage() {
           )}
         </div>
       </div>
+
+      {passiveCheck && (
+        <div className="alert alert-info mb-4" role="note">
+          <span>ℹ️</span>
+          <div style={{ display: "grid", gap: 6 }}>
+            <strong>
+              Passive Website Security Check — not a full penetration test
+            </strong>
+            <span className="text-sm">
+              SecureWise sent read-only requests to {scan.target_url} and
+              reviewed the response headers and cookies. No attacks, form
+              submissions or active scanning were performed, so this does not
+              cover login, authorization or application logic flaws.
+            </span>
+            {scan.status === "completed_partial" && (
+              <span className="text-sm">
+                <strong>Why "completed partial"?</strong> The check ran
+                successfully. SecureWise labels a scan "partial" whenever no
+                full external scanner (such as OWASP ZAP) was used, so a
+                passive-only result is never presented as complete coverage.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {progress?.worker_readiness && (
         <div className="glass-card mb-4" style={{ padding: "1rem" }}>
@@ -804,39 +895,41 @@ export default function ScanDetailPage() {
         ))}
       </div>
 
-      <div className="glass-card mb-6" style={{ padding: "1.25rem" }}>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 style={{ fontSize: "0.95rem", fontWeight: 700 }}>
-              Discovery summary
-            </h2>
-            <p className="text-xs text-muted">
-              Fields surfaced from the backend discovery and runtime planning
-              metadata.
-            </p>
-          </div>
-          <span className="badge badge-info">
-            {Math.round((Number(readDiscovery(scan).confidence) || 0) * 100)}%
-          </span>
-        </div>
-        <div
-          className="grid gap-3"
-          style={{
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          }}
-        >
-          {discoverySummary.map((item) => (
-            <div
-              key={item.label}
-              className="glass-card-sm"
-              style={{ padding: "0.9rem 1rem" }}
-            >
-              <div className="text-xs text-muted mb-1">{item.label}</div>
-              <div className="text-sm text-primary">{item.value}</div>
+      {!passiveCheck && (
+        <div className="glass-card mb-6" style={{ padding: "1.25rem" }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 style={{ fontSize: "0.95rem", fontWeight: 700 }}>
+                Discovery summary
+              </h2>
+              <p className="text-xs text-muted">
+                Fields surfaced from the backend discovery and runtime planning
+                metadata.
+              </p>
             </div>
-          ))}
+            <span className="badge badge-info">
+              {Math.round((Number(readDiscovery(scan).confidence) || 0) * 100)}%
+            </span>
+          </div>
+          <div
+            className="grid gap-3"
+            style={{
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
+            {discoverySummary.map((item) => (
+              <div
+                key={item.label}
+                className="glass-card-sm"
+                style={{ padding: "0.9rem 1rem" }}
+              >
+                <div className="text-xs text-muted mb-1">{item.label}</div>
+                <div className="text-sm text-primary">{item.value}</div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="glass-card mb-6" style={{ overflow: "hidden" }}>
         <div

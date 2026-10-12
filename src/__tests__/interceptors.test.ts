@@ -1,7 +1,7 @@
 /**
  * Tests for the axios client interceptors:
  *   - CSRF token injection (request interceptor)
- *   - 401/403 redirect to login (response interceptor)
+ *   - authentication failures redirect to login (response interceptor)
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -128,7 +128,8 @@ describe("Request interceptor — CSRF token injection", () => {
 describe("Response interceptor — error handling", () => {
   const originalLocation = window.location;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    (await import("../api/client")).__resetCsrfCacheForTests();
     // Replace window.location with a writable mock
     Object.defineProperty(window, "location", {
       writable: true,
@@ -157,10 +158,40 @@ describe("Response interceptor — error handling", () => {
     expect(window.location.href).toContain("login");
   });
 
-  it("redirects to /login/ on 403 response", async () => {
-    const error = { response: { status: 403 } };
+  it("does NOT redirect for a SecureWise organization permission 403", async () => {
+    const error = {
+      response: {
+        status: 403,
+        data: { detail: "Organization membership is required." },
+      },
+      config: { method: "get", url: "/securewise/scans/worker-status/" },
+    };
     await expect(captors.responseErrorCb!(error)).rejects.toBe(error);
-    expect(window.location.href).toContain("login");
+    expect(window.location.href).toBe("http://localhost:5174/dashboard");
+  });
+
+  it("redirects to GuideWisey login when the authenticated session check is denied", async () => {
+    const error = {
+      response: {
+        status: 403,
+        data: { detail: "Authentication credentials were not provided." },
+      },
+      config: { method: "get", url: "/accounts/me/" },
+    };
+    await expect(captors.responseErrorCb!(error)).rejects.toBe(error);
+    expect(window.location.href).toBe(
+      "http://localhost:3000/login?next=http%3A%2F%2Flocalhost%3A5174%2Fdashboard",
+    );
+  });
+
+  it("starts only one login redirect when several auth failures arrive together", async () => {
+    const error = { response: { status: 401 } };
+    await expect(captors.responseErrorCb!(error)).rejects.toBe(error);
+    const first = window.location.href;
+    window.location.href = "sentinel";
+    await expect(captors.responseErrorCb!(error)).rejects.toBe(error);
+    expect(first).toContain("login");
+    expect(window.location.href).toBe("sentinel");
   });
 
   it("does NOT redirect on 404 response", async () => {
