@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { sw } from "../../api/client";
 import type { Finding, FindingAiSuggestionResponse } from "../../types";
 import { SeverityBadge, FindingStatusBadge } from "../../components/ui/Badges";
+import { headerGuidance } from "../scans/passiveWebsite";
 import { LoadingState, ErrorState } from "../../components/ui/States";
 import { Modal } from "../../components/ui/Modal";
 
@@ -229,6 +230,8 @@ export default function FindingDetailPage() {
   const snippet = finding.code_snippet?.trim();
   const suggestion = aiSuggestion?.ai_fix_suggestion;
 
+  const guidance = headerGuidance(finding.evidence);
+
   return (
     <div>
       <div className="breadcrumb">
@@ -359,7 +362,7 @@ export default function FindingDetailPage() {
         )}
       </div>
 
-      <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 300px" }}>
+      <div className="sw-finding-layout">
         <div className="flex-col gap-4">
           {finding.description && (
             <div className="glass-card" style={{ padding: "1.25rem" }}>
@@ -511,6 +514,22 @@ export default function FindingDetailPage() {
               >
                 {finding.recommendation}
               </p>
+              {guidance && (
+                <div className="text-sm mt-3" style={{ lineHeight: 1.7 }}>
+                  <p>
+                    <strong>Why it matters:</strong> {guidance.why}
+                  </p>
+                  <p className="mt-2">
+                    <strong>Example value:</strong>
+                  </p>
+                  <pre className="code-block">{guidance.example}</pre>
+                  <p className="text-xs text-muted mt-2">
+                    Set it in your web server, CDN or hosting configuration (for
+                    example the headers section of vercel.json on Vercel), test
+                    it in staging first, then retest.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

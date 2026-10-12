@@ -1289,3 +1289,69 @@ a:hover {
 .p-6 {
   padding: 1.5rem;
 }
+
+/* AutoPentest wizard step indicator: equal columns, never overlapping text */
+.aw-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.aw-step {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+.aw-step-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aw-step:disabled:not(.btn-primary) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+@media (max-width: 900px) {
+  /* On phones and tablets only the current step shows its name; others show their number */
+  .aw-step:not([aria-current="step"]) .aw-step-label {
+    display: none;
+  }
+  .aw-steps {
+    display: flex;
+  }
+  .aw-step {
+    flex: 0 0 auto;
+    padding-inline: 0.9rem;
+  }
+  .aw-step[aria-current="step"] {
+    flex: 1 1 auto;
+  }
+}
+.btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.aw-field-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--gw-text-body);
+}
+
+.aw-preview {
+  border: 1px dashed var(--border-subtle, rgba(148, 163, 184, 0.5));
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.sw-finding-layout {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+
+@media (max-width: 900px) {
+  .sw-finding-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

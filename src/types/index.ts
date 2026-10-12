@@ -268,6 +268,7 @@ export interface Scan {
   project: string;
   repository: string | null;
   policy: string | null;
+  testing_authorization?: string | null;
   scan_type: ScanType;
   branch: string;
   commit_sha: string;
@@ -368,6 +369,9 @@ export interface AutoPentestReadiness {
   worker_supports_passive: boolean;
   worker_supports_authenticated_api: boolean;
   worker_supports_authenticated_browser: boolean;
+  worker_supports_experimental_api?: boolean;
+  experimental_low_resource_enabled?: boolean;
+  resource_tier?: "recommended" | "experimental" | "insufficient" | "";
   encryption_key_compatibility:
     "matched" | "mismatch" | "not_reported" | "unavailable";
   diagnostics: string[];
@@ -379,6 +383,11 @@ export interface SecureWiseWorkerStatus {
   capabilities: string[];
   worker_profile: string;
   autopentest_readiness: AutoPentestReadiness;
+  website_readiness?: {
+    ready: boolean;
+    worker_ready: boolean;
+    blockers: { code: string; message: string }[];
+  };
   heartbeat_age_seconds: number | null;
   queue: {
     queued_scans: number;
@@ -517,6 +526,7 @@ export interface PentestSession {
   error_message: string;
   timeout_seconds: number;
   requests_per_minute: number;
+  experimental_low_resource?: boolean;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
