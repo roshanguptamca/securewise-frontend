@@ -7,6 +7,7 @@ export type ScanType =
 export type ScanStatus =
   | "pending"
   | "queued"
+  | "worker_claimed"
   | "cloning"
   | "running"
   | "running_sast"
@@ -40,7 +41,7 @@ export type AuthType =
   "public" | "personal_access_token" | "oauth" | "github_app";
 export type GitIntegrationStatus = "active" | "expired" | "revoked" | "error";
 export type Visibility = "public" | "private" | "internal";
-export type AccessMode = "public" | "integration" | "local_path";
+export type AccessMode = "public" | "integration" | "github_app" | "local_path";
 export type LastAccessStatus =
   "accessible" | "forbidden" | "not_found" | "error";
 
@@ -98,6 +99,66 @@ export interface GitIntegration {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface GitHubAppInstallation {
+  id: string;
+  organization: string;
+  installation_id: number;
+  account_login: string;
+  account_type: string;
+  permissions: Record<string, string>;
+  suspended: boolean;
+  removed: boolean;
+  available: boolean;
+}
+
+export interface GitHubAppRepository {
+  id: number;
+  full_name: string;
+  private: boolean;
+  default_branch: string;
+  html_url: string;
+}
+
+export interface SecureWiseApplicationTarget {
+  id: string;
+  organization: string;
+  project: string;
+  url: string;
+  hostname: string;
+  port: number;
+  base_path: string;
+  verified: boolean;
+  verified_at: string | null;
+  ownership_revoked_at: string | null;
+  created_at: string;
+}
+
+export interface SecureWiseOwnershipChallenge {
+  id: string;
+  method: "dns_txt" | "https_well_known";
+  token: string;
+  expires_at: string;
+  dns_name: string;
+  https_path: string;
+}
+
+export interface SecureWiseTestingAuthorization {
+  id: string;
+  organization: string;
+  target: string;
+  authorized_hosts: string[];
+  allowed_ports: number[];
+  allowed_paths: string[];
+  excluded_paths: string[];
+  approved_scan_methods: string[];
+  testing_environment: "production" | "staging" | "test";
+  starts_at: string;
+  expires_at: string;
+  approved_by: number | null;
+  revoked_at: string | null;
+  active: boolean;
 }
 
 // ─── Project ───────────────────────────────────────────────────────────────
@@ -238,6 +299,9 @@ export interface ScanDiagnostics {
   stage?: string;
   root_cause?: string;
   retryable?: boolean;
+  mode?: string;
+  execution_mode?: string;
+  coverage?: Record<string, unknown>;
 }
 
 // ─── Scan Engine Result ────────────────────────────────────────────────────
@@ -264,6 +328,32 @@ export interface ScanProgress {
   progress: number;
   elapsed_seconds: number;
   findings_count: number;
+  coverage?: {
+    requested_engines: number;
+    completed_engines: number;
+    skipped_engines: number;
+    failed_engines: number;
+    total_findings: number;
+  };
+  worker_readiness?: {
+    worker_available: boolean;
+    docker_ready: boolean;
+    trivy_available: boolean;
+    zap_available: boolean;
+    runner_type: string;
+    architecture: string;
+    scanner_versions: Record<string, string>;
+    runners: Array<{
+      runner_type: string;
+      architecture: string;
+      online: number;
+      idle: number;
+      capabilities: string[];
+      scanner_versions: Record<string, string[]>;
+    }>;
+    last_seen_at: string | null;
+    diagnostics: string[];
+  };
   engines: Array<{
     engine: ScanType | string;
     status: EngineStatus;
@@ -271,6 +361,166 @@ export interface ScanProgress {
     skipped_reason?: string;
     diagnostics?: Pick<ScanDiagnostics, "log_excerpt">;
   }>;
+}
+
+export interface AutoPentestReadiness {
+  worker_available: boolean;
+  worker_supports_passive: boolean;
+  worker_supports_authenticated_api: boolean;
+  worker_supports_authenticated_browser: boolean;
+  encryption_key_compatibility:
+    "matched" | "mismatch" | "not_reported" | "unavailable";
+  diagnostics: string[];
+}
+
+export interface SecureWiseWorkerStatus {
+  worker_available: boolean;
+  docker_ready: boolean;
+  capabilities: string[];
+  worker_profile: string;
+  autopentest_readiness: AutoPentestReadiness;
+  heartbeat_age_seconds: number | null;
+  queue: {
+    queued_scans: number;
+    queued_pentests: number;
+    stale_jobs: number;
+    failed_scans: number;
+    failed_pentests: number;
+    average_scan_duration_seconds: number | null;
+  };
+}
+
+export type PentestOutcome =
+  | "planned"
+  | "confirmed_vulnerability"
+  | "suspected_vulnerability"
+  | "inconclusive"
+  | "passed"
+  | "not_executed";
+
+export interface PentestEvidence {
+  id: number;
+  kind: string;
+  content: Record<string, unknown>;
+  sha256: string;
+  created_at: string;
+}
+
+export interface PentestExecution {
+  id: number;
+  outcome: PentestOutcome;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+  summary: string;
+  error_message: string;
+  evidence: PentestEvidence[];
+}
+
+export interface PentestTestCase {
+  id: number;
+  test_key: string;
+  title: string;
+  category: string;
+  endpoint: string;
+  method: string;
+  expected_behavior: string;
+  status: PentestOutcome;
+  severity: Severity;
+  confidence: Confidence;
+  cwe_id: string;
+  owasp_category: string;
+  recommendation: string;
+  source: string;
+  executions: PentestExecution[];
+}
+
+export interface PentestTestProposal {
+  id: string;
+  proposal_key: string;
+  test_type: string;
+  title: string;
+  endpoint: string;
+  method: string;
+  required_role: string;
+  expected_property: string;
+  safe_method: string;
+  required_test_data: Record<string, unknown>;
+  estimated_cost: {
+    read_only_requests: number;
+    browser_journeys: number;
+    provider_cost_usd: number;
+    worker_compute_cost: string;
+  };
+  parameter_schema: Record<
+    string,
+    | { type: "enum"; values: Array<string | number | boolean> }
+    | { type: "integer" | "boolean" }
+  >;
+  safe_parameters: Record<string, string | number | boolean>;
+  cwe_id: string;
+  owasp_category: string;
+  severity: Severity;
+  confidence: Confidence;
+  rationale: string;
+  limitations: string;
+  execution_mode: string;
+  executable: boolean;
+  approval_status:
+    "pending" | "approved" | "rejected" | "unsupported" | "executed";
+  source: string;
+  test_case: number | null;
+}
+
+export interface PentestRetestComparison {
+  baseline_session_id: string;
+  baseline_cases: number;
+  retest_cases: number;
+  fixed: string[];
+  still_confirmed: string[];
+  suspected: string[];
+  newly_confirmed: string[];
+  not_retested: string[];
+}
+
+export interface PentestSession {
+  id: string;
+  organization: string;
+  project: string;
+  repository: string;
+  retest_of: string | null;
+  unified_scan: string | null;
+  authorization_confirmed: boolean;
+  authorization_reference: string;
+  mode:
+    | "passive"
+    | "authenticated_api"
+    | "authenticated_browser"
+    | "security_planning"
+    | "approved_tests";
+  status:
+    | "pending"
+    | "queued"
+    | "worker_claimed"
+    | "running"
+    | "completed"
+    | "completed_with_warnings"
+    | "failed"
+    | "cancelled";
+  progress: number;
+  scope: Array<{ scheme: "http" | "https"; host: string; port: number }>;
+  test_cases: PentestTestCase[];
+  proposals: PentestTestProposal[];
+  security_inventory: Record<string, unknown>;
+  coverage: Record<string, number>;
+  retest_comparison?: PentestRetestComparison | null;
+  error_message: string;
+  timeout_seconds: number;
+  requests_per_minute: number;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Finding ───────────────────────────────────────────────────────────────
@@ -384,6 +634,19 @@ export interface DashboardSummary {
   security_score: number;
   severity_counts: Record<Severity, number>;
   recent_scans: Scan[];
+  owasp_top10_coverage: Record<string, number>;
+  cwe_ids_covered: string[];
+  cwe_coverage: string[];
+  security_taxonomy: {
+    dataset_version: string;
+    cwe_top25_edition: string;
+    owasp_edition: string;
+    cwe_source: string;
+  };
+  quality_gate_counts: {
+    passed: number;
+    failed: number;
+  };
   top_risky_projects: Array<{
     project__id: string;
     project__name: string;

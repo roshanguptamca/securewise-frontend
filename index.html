@@ -1,6 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-S5ZLBGRJD4"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      window.gtag = window.gtag || gtag;
+      gtag("js", new Date());
+      gtag("config", "G-S5ZLBGRJD4", {
+        send_page_view: false,
+        page_location: window.location.origin + "/dashboard",
+        page_referrer: "",
+        page_title: "SecureWise",
+        allow_google_signals: false,
+        allow_ad_personalization_signals: false,
+      });
+      window.GW_GA4_BOOTSTRAPPED_ID = "G-S5ZLBGRJD4";
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SecureWise – Application Security Platform</title>

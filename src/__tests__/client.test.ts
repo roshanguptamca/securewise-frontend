@@ -87,6 +87,66 @@ describe("sw API helpers — URLs", () => {
     });
   });
 
+  it("sw.githubApp.connect starts installation for an organization", () => {
+    sw.githubApp.connect("org-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/github-app/connect/",
+      { organization: "org-1" },
+    );
+  });
+
+  it("sw.githubApp.selectRepositories sends only reviewed repository IDs", () => {
+    sw.githubApp.selectRepositories({
+      installation: "installation-1",
+      repository_ids: [123],
+      project: "project-1",
+    });
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/github-app/repositories/select/",
+      {
+        installation: "installation-1",
+        repository_ids: [123],
+        project: "project-1",
+      },
+    );
+  });
+
+  it("registers application targets and requests ownership challenges", () => {
+    sw.applicationTargets.register({
+      project: "project-1",
+      url: "https://app.example.test/",
+      verification_method: "dns_txt",
+    });
+    sw.applicationTargets.action("target-1", "verify", {
+      challenge: "challenge-1",
+    });
+    expect(mockAxios.post).toHaveBeenNthCalledWith(
+      1,
+      "/securewise/application-targets/",
+      {
+        project: "project-1",
+        url: "https://app.example.test/",
+        verification_method: "dns_txt",
+      },
+    );
+    expect(mockAxios.post).toHaveBeenNthCalledWith(
+      2,
+      "/securewise/application-targets/target-1/verify/",
+      { challenge: "challenge-1" },
+    );
+  });
+
+  it("lists and revokes application testing authorizations", () => {
+    sw.testingAuthorizations.list();
+    sw.testingAuthorizations.revoke("authorization-1");
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/testing-authorizations/",
+    );
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/testing-authorizations/authorization-1/revoke/",
+    );
+  });
+
   it("sw.projects.list(orgId) passes organization param", () => {
     sw.projects.list("org-1");
     expect(mockAxios.get).toHaveBeenCalledWith("/securewise/projects/", {
@@ -112,6 +172,20 @@ describe("sw API helpers — URLs", () => {
     sw.scans.retry("scan-1");
     expect(mockAxios.post).toHaveBeenCalledWith(
       "/securewise/scans/scan-1/retry/",
+    );
+  });
+
+  it("sw.scans.workerStatus() requests protected operational readiness", () => {
+    sw.scans.workerStatus();
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/scans/worker-status/",
+    );
+  });
+
+  it("sw.autopentest.retry(id) requests a guarded failed-session retry", () => {
+    sw.autopentest.retry("session-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/autopentest/sessions/session-1/retry/",
     );
   });
 

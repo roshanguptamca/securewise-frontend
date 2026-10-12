@@ -80,6 +80,25 @@ const currentProgress = vi.hoisted(() => {
     progress: 100,
     elapsed_seconds: 83,
     findings_count: 1,
+    worker_readiness: {
+      worker_available: false,
+      docker_ready: false,
+      trivy_available: false,
+      zap_available: false,
+      runner_type: "",
+      architecture: "",
+      scanner_versions: {},
+      runners: [] as Array<{
+        runner_type: string;
+        architecture: string;
+        online: number;
+        idle: number;
+        capabilities: string[];
+        scanner_versions: Record<string, string[]>;
+      }>,
+      last_seen_at: null,
+      diagnostics: [] as string[],
+    },
     engines: [
       {
         engine: "sast",
@@ -215,6 +234,18 @@ describe("ScanDetailPage", () => {
       progress: 100,
       elapsed_seconds: 83,
       findings_count: 1,
+      worker_readiness: {
+        worker_available: false,
+        docker_ready: false,
+        trivy_available: false,
+        zap_available: false,
+        runner_type: "",
+        architecture: "",
+        scanner_versions: {},
+        runners: [],
+        last_seen_at: null,
+        diagnostics: [],
+      },
     });
 
     mockScans.get.mockResolvedValue({ data: currentScan });
@@ -280,6 +311,46 @@ describe("ScanDetailPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Retry requested.")).toBeInTheDocument();
     });
+  });
+
+  it("shows worker and scanner readiness from scan progress", async () => {
+    currentProgress.worker_readiness = {
+      worker_available: true,
+      docker_ready: false,
+      trivy_available: true,
+      zap_available: false,
+      runner_type: "linux_worker",
+      architecture: "amd64",
+      scanner_versions: { semgrep: "1.168.0" },
+      runners: [
+        {
+          runner_type: "linux_worker",
+          architecture: "arm64",
+          online: 1,
+          idle: 1,
+          capabilities: ["sast", "sca", "secrets", "iac"],
+          scanner_versions: { semgrep: ["1.168.0"] },
+        },
+      ],
+      last_seen_at: null,
+      diagnostics: ["Docker daemon is unreachable."],
+    };
+
+    renderPage();
+
+    expect(
+      await screen.findByLabelText("Worker available"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Docker unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText("Trivy available")).toBeInTheDocument();
+    expect(screen.getByLabelText("OWASP ZAP unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText(/linux_worker arm64: 1 online \/ 1 idle/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/semgrep 1.168.0/)).toBeInTheDocument();
+    expect(
+      screen.getByText("Docker daemon is unreachable."),
+    ).toBeInTheDocument();
   });
 
   it("hides retry when can_retry is false and keeps findings visible", async () => {

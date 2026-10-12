@@ -23,6 +23,7 @@ const POLL_INTERVAL = 3000;
 const ACTIVE_STATUSES = [
   "pending",
   "queued",
+  "worker_claimed",
   "cloning",
   "running",
   "running_sast",
@@ -67,7 +68,7 @@ function engineLabel(engine: string): string {
     secrets: "Secret scan",
     iac: "IaC scan",
     container: "Container scan",
-    api: "API scan",
+    api: "API security (static OpenAPI)",
     dast: "DAST",
   };
   return labels[engine] ?? humanize(engine);
@@ -79,6 +80,23 @@ function displayList(value: unknown): string {
   }
   if (typeof value === "string" && value.trim()) return value;
   return "None detected";
+}
+
+function engineExecutionLabel(
+  engine: string,
+  rawSummary?: Record<string, unknown>,
+): string {
+  const executionMode = rawSummary?.execution_mode;
+  if (engine === "api") return "OpenAPI static analysis; no API requests sent";
+  if (executionMode === "zap_baseline") return "OWASP ZAP baseline";
+  if (executionMode === "requests_passive_fallback") {
+    return "Lightweight passive HTTP checks (ZAP unavailable or failed)";
+  }
+  const rawTool = rawSummary?.raw_tool;
+  if (typeof rawTool === "string" && rawTool && rawTool !== "none") {
+    return `${rawTool} · ${String(rawSummary?.mode ?? "mode unknown").replaceAll("_", " ")}`;
+  }
+  return "Not executed or not configured";
 }
 
 function readDiscovery(scan: Scan): Record<string, unknown> {
@@ -616,6 +634,77 @@ export default function ScanDetailPage() {
         </div>
       </div>
 
+      {progress?.worker_readiness && (
+        <div className="glass-card mb-4" style={{ padding: "1rem" }}>
+          <div className="text-sm font-semibold mb-2">Worker readiness</div>
+          <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+            {(
+              [
+                ["Worker", progress.worker_readiness.worker_available],
+                ["Docker", progress.worker_readiness.docker_ready],
+                ["Trivy", progress.worker_readiness.trivy_available],
+                ["OWASP ZAP", progress.worker_readiness.zap_available],
+              ] as const
+            ).map(([label, ready]) => (
+              <span
+                key={label}
+                className={`badge ${ready ? "badge-completed" : "badge-failed"}`}
+                aria-label={`${label} ${ready ? "available" : "unavailable"}`}
+              >
+                {label}: {ready ? "ready" : "unavailable"}
+              </span>
+            ))}
+          </div>
+          <div className="text-xs text-muted mt-2">
+            Runner: {progress.worker_readiness.runner_type || "unavailable"}
+            {progress.worker_readiness.architecture
+              ? ` (${progress.worker_readiness.architecture})`
+              : ""}
+            {progress.worker_readiness.runners.length > 0 &&
+              ` · Fleet: ${progress.worker_readiness.runners.reduce((total, runner) => total + runner.online, 0)} online, ${progress.worker_readiness.runners.reduce((total, runner) => total + runner.idle, 0)} idle`}
+          </div>
+          {Object.keys(progress.worker_readiness.scanner_versions).length >
+            0 && (
+            <div className="text-xs text-muted mt-1">
+              Scanner versions:{" "}
+              {Object.entries(progress.worker_readiness.scanner_versions)
+                .map(([name, version]) => `${name} ${version}`)
+                .join(", ")}
+            </div>
+          )}
+          {progress.worker_readiness.runners.length > 0 && (
+            <ul className="text-xs text-muted mt-1">
+              {progress.worker_readiness.runners.map((runner) => (
+                <li key={`${runner.runner_type}-${runner.architecture}`}>
+                  {runner.runner_type} {runner.architecture}: {runner.online}{" "}
+                  online / {runner.idle} idle ·{" "}
+                  {runner.capabilities
+                    .filter((capability) =>
+                      [
+                        "sast",
+                        "sca",
+                        "secrets",
+                        "iac",
+                        "container",
+                        "dast",
+                        "api",
+                        "playwright",
+                        "docker_daemon",
+                      ].includes(capability),
+                    )
+                    .join(", ") || "no scanner capabilities"}
+                </li>
+              ))}
+            </ul>
+          )}
+          {progress.worker_readiness.diagnostics.length > 0 && (
+            <div className="text-xs text-muted mt-2">
+              {progress.worker_readiness.diagnostics.join(" ")}
+            </div>
+          )}
+        </div>
+      )}
+
       {partialCoverage && (
         <div className="alert alert-warning mb-6">
           <span>⚠️</span>
@@ -757,11 +846,17 @@ export default function ScanDetailPage() {
           }}
         >
           <h2 style={{ fontSize: "0.95rem", fontWeight: 700 }}>Engines</h2>
+          <p className="text-xs text-muted mt-1">
+            Coverage: {completedEngines.length}/
+            {scan.selected_engines?.length ?? engines.length} engines completed;{" "}
+            {skippedEngines.length} skipped; {failedEngines.length} failed.
+          </p>
         </div>
         <table className="sw-table">
           <thead>
             <tr>
               <th>Engine</th>
+              <th>Method</th>
               <th>Status</th>
               <th>Started</th>
               <th>Completed</th>
@@ -791,6 +886,15 @@ export default function ScanDetailPage() {
                     <span className="badge badge-info">
                       {engineLabel(String(engine.engine)).toUpperCase()}
                     </span>
+                  </td>
+                  <td
+                    className="text-muted text-xs"
+                    style={{ maxWidth: 260, whiteSpace: "normal" }}
+                  >
+                    {engineExecutionLabel(
+                      String(engine.engine),
+                      engine.raw_summary,
+                    )}
                   </td>
                   <td>
                     <EngineStatusBadge value={engine.status} />
@@ -902,7 +1006,7 @@ export default function ScanDetailPage() {
         </div>
       ) : (
         scan.status !== "pending" &&
-        !["queued", "running"].includes(scan.status) &&
+        !["queued", "worker_claimed", "running"].includes(scan.status) &&
         !scan.status.startsWith("running_") && (
           <div className="alert alert-info mb-6">
             <span>ℹ️</span>
