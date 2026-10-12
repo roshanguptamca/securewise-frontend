@@ -37,6 +37,41 @@ non-personalized configuration.
 
 This project uses React, TypeScript, Vite, and React Router.
 
+### SecureWise local development against ACC
+
+Use the non-production ACC API and ACC sign-in URL supplied by the SecureWise
+operator. Do not use the production GuideWisey, SecureWise, or API hosts.
+Development builds reject the production `guidewisey.com`,
+`securewise.guidewisey.com`, `www.guidewisey.com`, and `api.guidewisey.com`
+hosts for both API and login configuration.
+
+Create an ignored `.env.local` file with the following values, replacing the
+placeholders with the non-production hosts supplied by the operator. Do not
+commit the file or put credentials in it:
+
+```dotenv
+VITE_API_BASE_URL=https://<ACC_API_HOST>
+VITE_LOGIN_URL=https://<ACC_PORTAL_HOST>/login
+```
+
+Then start the frontend:
+
+```sh
+npm install
+npm run dev
+```
+
+The ACC host is deployment-specific. The backend must allow the local frontend
+origin in its CORS and CSRF trusted-origin settings. Sign in using the ACC
+account; do not point this frontend at production to work around local
+authentication configuration.
+
+Frontend checks are `npm test`, `npm run typecheck`, and `npm run test:e2e`.
+The Playwright test intercepts API traffic with a controlled synthetic
+assessment, so it validates the user-facing workflow without contacting ACC,
+production, or a real worker. Backend worker/fixture integration tests remain
+the source of evidence for scanner execution.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
