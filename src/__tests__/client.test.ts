@@ -175,6 +175,20 @@ describe("sw API helpers — URLs", () => {
     );
   });
 
+  it("sw.scans.workerStatus() requests protected operational readiness", () => {
+    sw.scans.workerStatus();
+    expect(mockAxios.get).toHaveBeenCalledWith(
+      "/securewise/scans/worker-status/",
+    );
+  });
+
+  it("sw.autopentest.retry(id) requests a guarded failed-session retry", () => {
+    sw.autopentest.retry("session-1");
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      "/securewise/autopentest/sessions/session-1/retry/",
+    );
+  });
+
   it("sw.scans.cancel(id) calls POST cancel action", () => {
     sw.scans.cancel("scan-1");
     expect(mockAxios.post).toHaveBeenCalledWith(

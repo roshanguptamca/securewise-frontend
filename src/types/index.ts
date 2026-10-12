@@ -363,6 +363,33 @@ export interface ScanProgress {
   }>;
 }
 
+export interface AutoPentestReadiness {
+  worker_available: boolean;
+  worker_supports_passive: boolean;
+  worker_supports_authenticated_api: boolean;
+  worker_supports_authenticated_browser: boolean;
+  encryption_key_compatibility:
+    "matched" | "mismatch" | "not_reported" | "unavailable";
+  diagnostics: string[];
+}
+
+export interface SecureWiseWorkerStatus {
+  worker_available: boolean;
+  docker_ready: boolean;
+  capabilities: string[];
+  worker_profile: string;
+  autopentest_readiness: AutoPentestReadiness;
+  heartbeat_age_seconds: number | null;
+  queue: {
+    queued_scans: number;
+    queued_pentests: number;
+    stale_jobs: number;
+    failed_scans: number;
+    failed_pentests: number;
+    average_scan_duration_seconds: number | null;
+  };
+}
+
 export type PentestOutcome =
   | "planned"
   | "confirmed_vulnerability"

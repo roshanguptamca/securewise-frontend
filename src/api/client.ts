@@ -1,12 +1,43 @@
 import axios from "axios";
 import type { AxiosError, InternalAxiosRequestConfig } from "axios";
 
-const BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
-).replace(/\/$/, "");
+function ensureNonProductionDevelopmentUrl(
+  value: string,
+  name: string,
+): string {
+  if (import.meta.env.DEV) {
+    const hostname = new URL(value).hostname.toLowerCase().replace(/\.$/, "");
+    if (
+      [
+        "api.guidewisey.com",
+        "guidewisey.com",
+        "securewise.guidewisey.com",
+        "www.guidewisey.com",
+      ].includes(hostname)
+    ) {
+      throw new Error(
+        `${name} must point to the ACC backend during local development, not production.`,
+      );
+    }
+  }
+  return value;
+}
 
-const LOGIN_URL =
-  import.meta.env.VITE_LOGIN_URL ?? "https://www.guidewisey.com/login";
+const BASE_URL = ensureNonProductionDevelopmentUrl(
+  (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(
+    /\/$/,
+    "",
+  ),
+  "VITE_API_BASE_URL",
+);
+
+const LOGIN_URL = ensureNonProductionDevelopmentUrl(
+  import.meta.env.VITE_LOGIN_URL ??
+    (import.meta.env.DEV
+      ? "http://localhost:5173/login"
+      : "https://www.guidewisey.com/login"),
+  "VITE_LOGIN_URL",
+);
 
 const api = axios.create({
   baseURL: `${BASE_URL}/api`,
@@ -238,6 +269,7 @@ export const sw = {
     progress: (id: string) => api.get(`/securewise/scans/${id}/progress/`),
     engineResults: (id: string) =>
       api.get(`/securewise/scans/${id}/engine-results/`),
+    workerStatus: () => api.get("/securewise/scans/worker-status/"),
   },
 
   autopentest: {
@@ -248,6 +280,8 @@ export const sw = {
       api.post("/securewise/autopentest/sessions/", data),
     cancel: (id: string) =>
       api.post(`/securewise/autopentest/sessions/${id}/cancel/`),
+    retry: (id: string) =>
+      api.post(`/securewise/autopentest/sessions/${id}/retry/`),
     executeApproved: (id: string) =>
       api.post(`/securewise/autopentest/sessions/${id}/execute-approved/`),
     report: (id: string) =>
