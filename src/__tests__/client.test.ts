@@ -32,7 +32,7 @@ import { sw } from "../api/client";
 
 // Grab the mock instance created by axios.create()
 import axios from "axios";
-const mockAxios = (axios.create as ReturnType<typeof vi.fn>)();
+const mockAxios = vi.mocked(axios.create)();
 
 describe("sw API helpers — URLs", () => {
   beforeEach(() => {

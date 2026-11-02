@@ -22,7 +22,7 @@ vi.mock("axios", () => {
 import { sw } from "../api/client";
 import axios from "axios";
 
-const mockAxios = (axios.create as ReturnType<typeof vi.fn>)();
+const mockAxios = vi.mocked(axios.create)();
 
 describe("sw API helpers — full coverage", () => {
   beforeEach(() => vi.clearAllMocks());
