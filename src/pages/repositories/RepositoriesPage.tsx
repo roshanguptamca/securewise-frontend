@@ -5,6 +5,8 @@ import type {
   Organization,
   Project,
   GitIntegration,
+  GitHubAppInstallation,
+  GitHubAppRepository,
 } from "../../types";
 import {
   LoadingState,
@@ -18,6 +20,9 @@ export default function RepositoriesPage() {
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [integrations, setIntegrations] = useState<GitIntegration[]>([]);
+  const [appInstallations, setAppInstallations] = useState<
+    GitHubAppInstallation[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -33,12 +38,14 @@ export default function RepositoriesPage() {
       sw.orgs.list(),
       sw.projects.list(),
       sw.gitIntegrations.list(),
+      sw.githubApp.installations(),
     ])
-      .then(([r, o, p, i]) => {
+      .then(([r, o, p, i, a]) => {
         setRepos(r.data.results ?? r.data);
         setOrgs(o.data.results ?? o.data);
         setProjects(p.data.results ?? p.data);
         setIntegrations(i.data.results ?? i.data);
+        setAppInstallations(a.data.results ?? a.data);
       })
       .catch(() => setError("Failed to load repositories."))
       .finally(() => setLoading(false));
@@ -55,7 +62,7 @@ export default function RepositoriesPage() {
         ...t,
         [id]: { ok: r.data.accessible, msg: r.data.message },
       }));
-    } catch (e: any) {
+    } catch {
       setTestResults((t) => ({
         ...t,
         [id]: { ok: false, msg: "Test failed." },
@@ -88,6 +95,13 @@ export default function RepositoriesPage() {
           + Add Repository
         </button>
       </div>
+
+      <GitHubAppPanel
+        orgs={orgs}
+        projects={projects}
+        installations={appInstallations}
+        onSynced={load}
+      />
 
       {repos.length === 0 ? (
         <EmptyState
@@ -254,6 +268,207 @@ export default function RepositoriesPage() {
         />
       )}
     </div>
+  );
+}
+
+function GitHubAppPanel({
+  orgs,
+  projects,
+  installations,
+  onSynced,
+}: {
+  orgs: Organization[];
+  projects: Project[];
+  installations: GitHubAppInstallation[];
+  onSynced: () => void;
+}) {
+  const [organization, setOrganization] = useState("");
+  const [installation, setInstallation] = useState("");
+  const [project, setProject] = useState("");
+  const [available, setAvailable] = useState<GitHubAppRepository[]>([]);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!organization && orgs.length) setOrganization(orgs[0].id);
+  }, [organization, orgs]);
+
+  const orgInstallations = installations.filter(
+    (item) => item.organization === organization && item.available,
+  );
+  const orgProjects = projects.filter(
+    (item) => item.organization === organization,
+  );
+
+  const connect = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await sw.githubApp.connect(organization);
+      window.location.assign(response.data.installation_url);
+    } catch (e: any) {
+      setError(
+        e.response?.data?.detail ?? "GitHub App connection could not start.",
+      );
+      setBusy(false);
+    }
+  };
+
+  const loadAvailable = async () => {
+    setBusy(true);
+    setError("");
+    setSelected([]);
+    try {
+      const response = await sw.githubApp.repositories(installation);
+      setAvailable(response.data);
+    } catch (e: any) {
+      setError(
+        e.response?.data?.detail ?? "Could not load installed repositories.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const syncSelected = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await sw.githubApp.selectRepositories({
+        installation,
+        repository_ids: selected,
+        project: project || undefined,
+      });
+      setAvailable([]);
+      setSelected([]);
+      onSynced();
+    } catch (e: any) {
+      setError(
+        e.response?.data?.detail ?? "Could not sync selected repositories.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="glass-card mb-4" style={{ padding: "1.25rem" }}>
+      <h2 className="text-sm font-semibold mb-2">GitHub App</h2>
+      <p className="text-xs text-muted mb-4">
+        Connect SecureWise with read-only repository access. Scans use a pinned
+        commit snapshot and never run repository build or install scripts.
+      </p>
+      {error && <div className="alert alert-error mb-3">{error}</div>}
+      <div className="flex gap-2 items-end">
+        <label className="form-group" style={{ minWidth: 220, flex: 1 }}>
+          <span className="form-label">Organization</span>
+          <select
+            className="form-select"
+            value={organization}
+            onChange={(event) => {
+              setOrganization(event.target.value);
+              setInstallation("");
+              setProject("");
+              setAvailable([]);
+              setSelected([]);
+            }}
+          >
+            {orgs.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="btn-secondary"
+          onClick={connect}
+          disabled={busy || !organization}
+        >
+          Connect GitHub App
+        </button>
+      </div>
+      {orgInstallations.length > 0 && (
+        <div className="flex gap-2 items-end mt-3">
+          <label className="form-group" style={{ minWidth: 220, flex: 1 }}>
+            <span className="form-label">Connected GitHub account</span>
+            <select
+              className="form-select"
+              value={installation}
+              onChange={(event) => {
+                setInstallation(event.target.value);
+                setAvailable([]);
+              }}
+            >
+              <option value="">Select installation</option>
+              {orgInstallations.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.account_login}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="btn-secondary"
+            onClick={loadAvailable}
+            disabled={busy || !installation}
+          >
+            Load repositories
+          </button>
+        </div>
+      )}
+      {available.length > 0 && (
+        <div className="mt-3">
+          <label className="form-group">
+            <span className="form-label">Project (optional)</span>
+            <select
+              className="form-select"
+              value={project}
+              onChange={(event) => setProject(event.target.value)}
+            >
+              <option value="">No project</option>
+              {orgProjects.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div
+            className="flex-col gap-2 mt-3"
+            style={{ maxHeight: 220, overflowY: "auto" }}
+          >
+            {available.map((repo) => (
+              <label key={repo.id} className="text-xs flex gap-2 items-center">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(repo.id)}
+                  onChange={(event) =>
+                    setSelected((current) =>
+                      event.target.checked
+                        ? [...current, repo.id]
+                        : current.filter((id) => id !== repo.id),
+                    )
+                  }
+                />
+                <span>{repo.full_name}</span>
+                {repo.private && (
+                  <span className="badge badge-private">private</span>
+                )}
+              </label>
+            ))}
+          </div>
+          <button
+            className="btn-primary mt-3"
+            onClick={syncSelected}
+            disabled={busy || selected.length === 0}
+          >
+            {busy ? "Syncing…" : `Add ${selected.length} selected`}
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 

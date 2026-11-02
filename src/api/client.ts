@@ -1,12 +1,43 @@
 import axios from "axios";
 import type { AxiosError, InternalAxiosRequestConfig } from "axios";
 
-const BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
-).replace(/\/$/, "");
+function ensureNonProductionDevelopmentUrl(
+  value: string,
+  name: string,
+): string {
+  if (import.meta.env.DEV) {
+    const hostname = new URL(value).hostname.toLowerCase().replace(/\.$/, "");
+    if (
+      [
+        "api.guidewisey.com",
+        "guidewisey.com",
+        "securewise.guidewisey.com",
+        "www.guidewisey.com",
+      ].includes(hostname)
+    ) {
+      throw new Error(
+        `${name} must point to the ACC backend during local development, not production.`,
+      );
+    }
+  }
+  return value;
+}
 
-const LOGIN_URL =
-  import.meta.env.VITE_LOGIN_URL ?? "https://www.guidewisey.com/login";
+const BASE_URL = ensureNonProductionDevelopmentUrl(
+  (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(
+    /\/$/,
+    "",
+  ),
+  "VITE_API_BASE_URL",
+);
+
+const LOGIN_URL = ensureNonProductionDevelopmentUrl(
+  import.meta.env.VITE_LOGIN_URL ??
+    (import.meta.env.DEV
+      ? "http://localhost:3000/login"
+      : "https://www.guidewisey.com/login"),
+  "VITE_LOGIN_URL",
+);
 
 const api = axios.create({
   baseURL: `${BASE_URL}/api`,
@@ -25,6 +56,7 @@ const api = axios.create({
 // token directly in its JSON body for exactly this reason, so we fetch it
 // from there instead of relying on a readable cookie.
 let cachedCsrfToken = "";
+let loginRedirectStarted = false;
 
 function readCsrfCookie(): string {
   return (
@@ -38,6 +70,7 @@ function readCsrfCookie(): string {
 // Exposed for tests only — resets the module-level cache between test cases.
 export function __resetCsrfCacheForTests(): void {
   cachedCsrfToken = "";
+  loginRedirectStarted = false;
 }
 
 async function fetchCsrfToken(): Promise<string> {
@@ -89,12 +122,27 @@ api.interceptors.response.use(
       }
     }
 
-    if (status === 401 || status === 403) {
+    const isAuthenticationCheck = (config?.url || "")
+      .replace(/\/+$/, "")
+      .endsWith("/accounts/me");
+    const responseBody = err.response?.data;
+    const authenticationRequired =
+      typeof responseBody === "object" &&
+      responseBody !== null &&
+      "detail" in responseBody &&
+      responseBody.detail === "Authentication credentials were not provided.";
+    if (
+      status === 401 ||
+      (status === 403 && (isAuthenticationCheck || authenticationRequired))
+    ) {
       // A logout call failing (even after the CSRF retry above) must never bounce the
       // user to the login screen — AuthContext's own logout() catch/finally handles
       // clearing local state and redirecting to the GuideWisey homepage instead.
       const isLogoutCall = (config?.url || "").includes("/accounts/logout/");
-      if (!isLogoutCall) {
+      if (!isLogoutCall && !loginRedirectStarted) {
+        // Redirect once: concurrent 401/403 responses (e.g. StrictMode's double
+        // effect) would otherwise start competing navigations that can cancel each other.
+        loginRedirectStarted = true;
         // Redirect to GuideWisey main portal login, passing return URL
         const returnTo = encodeURIComponent(window.location.href);
         window.location.href = `${LOGIN_URL}?next=${returnTo}`;
@@ -113,7 +161,10 @@ export const sw = {
 
   // Organizations
   orgs: {
-    list: () => api.get("/securewise/organizations/"),
+    list: (page?: number) =>
+      page === undefined
+        ? api.get("/securewise/organizations/")
+        : api.get("/securewise/organizations/", { params: { page } }),
     get: (id: string) => api.get(`/securewise/organizations/${id}/`),
     create: (data: object) => api.post("/securewise/organizations/", data),
     update: (id: string, data: object) =>
@@ -123,9 +174,12 @@ export const sw = {
 
   // Members
   members: {
-    list: (orgId?: string) =>
+    list: (orgId?: string, page?: number) =>
       api.get("/securewise/memberships/", {
-        params: orgId ? { organization: orgId } : {},
+        params: {
+          ...(orgId ? { organization: orgId } : {}),
+          ...(page === undefined ? {} : { page }),
+        },
       }),
     add: (data: object) => api.post("/securewise/memberships/", data),
   },
@@ -146,11 +200,47 @@ export const sw = {
       api.post(`/securewise/git-integrations/${id}/list-repositories/`),
   },
 
+  githubApp: {
+    connect: (organization: string) =>
+      api.post("/securewise/github-app/connect/", { organization }),
+    installations: () => api.get("/securewise/github-app/installations/"),
+    repositories: (installation: string) =>
+      api.post("/securewise/github-app/installations/", { installation }),
+    selectRepositories: (data: {
+      installation: string;
+      repository_ids: number[];
+      project?: string;
+    }) => api.post("/securewise/github-app/repositories/select/", data),
+  },
+
+  applicationTargets: {
+    list: () => api.get("/securewise/application-targets/"),
+    register: (data: {
+      project: string;
+      url: string;
+      verification_method: "dns_txt" | "https_well_known";
+    }) => api.post("/securewise/application-targets/", data),
+    action: (
+      id: string,
+      action: "challenge" | "verify" | "revoke-ownership" | "authorize",
+      data: object = {},
+    ) => api.post(`/securewise/application-targets/${id}/${action}/`, data),
+  },
+
+  testingAuthorizations: {
+    list: () => api.get("/securewise/testing-authorizations/"),
+    revoke: (id: string) =>
+      api.post(`/securewise/testing-authorizations/${id}/revoke/`),
+  },
+
   // Projects
   projects: {
-    list: (orgId?: string) =>
+    list: (orgId?: string, page?: number) =>
       api.get("/securewise/projects/", {
-        params: orgId ? { organization: orgId } : {},
+        params: {
+          ...(orgId ? { organization: orgId } : {}),
+          ...(page === undefined ? {} : { page }),
+        },
       }),
     get: (id: string) => api.get(`/securewise/projects/${id}/`),
     create: (data: object) => api.post("/securewise/projects/", data),
@@ -205,6 +295,34 @@ export const sw = {
     progress: (id: string) => api.get(`/securewise/scans/${id}/progress/`),
     engineResults: (id: string) =>
       api.get(`/securewise/scans/${id}/engine-results/`),
+    workerStatus: () => api.get("/securewise/scans/worker-status/"),
+  },
+
+  autopentest: {
+    list: (params?: object) =>
+      api.get("/securewise/autopentest/sessions/", { params }),
+    get: (id: string) => api.get(`/securewise/autopentest/sessions/${id}/`),
+    create: (data: object) =>
+      api.post("/securewise/autopentest/sessions/", data),
+    cancel: (id: string) =>
+      api.post(`/securewise/autopentest/sessions/${id}/cancel/`),
+    retry: (id: string) =>
+      api.post(`/securewise/autopentest/sessions/${id}/retry/`),
+    executeApproved: (id: string) =>
+      api.post(`/securewise/autopentest/sessions/${id}/execute-approved/`),
+    report: (id: string) =>
+      api.get(`/securewise/autopentest/sessions/${id}/report/`),
+    approveProposal: (id: string) =>
+      api.post(`/securewise/autopentest/proposals/${id}/approve/`),
+    rejectProposal: (id: string) =>
+      api.post(`/securewise/autopentest/proposals/${id}/reject/`),
+    updateProposalParameters: (
+      id: string,
+      safe_parameters: Record<string, unknown>,
+    ) =>
+      api.patch(`/securewise/autopentest/proposals/${id}/`, {
+        safe_parameters,
+      }),
   },
 
   // Findings

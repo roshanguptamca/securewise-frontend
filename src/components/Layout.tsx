@@ -7,7 +7,9 @@ import { LoadingState } from "./ui/States";
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/projects": "Projects",
+  "/applications": "Application Targets",
   "/scans": "Scans",
+  "/autopentest": "AutoPentest",
   "/findings": "Findings",
   "/reports": "Reports",
   "/repositories": "Repositories",

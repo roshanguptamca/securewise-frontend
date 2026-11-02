@@ -6,9 +6,11 @@ import OrganizationsPage from "./pages/organizations/OrganizationsPage";
 import ProjectsPage from "./pages/projects/ProjectsPage";
 import ProjectDetailPage from "./pages/projects/ProjectDetailPage";
 import RepositoriesPage from "./pages/repositories/RepositoriesPage";
+import ApplicationTargetsPage from "./pages/applications/ApplicationTargetsPage";
 import ScanPoliciesPage from "./pages/scan-policies/ScanPoliciesPage";
 import ScansPage from "./pages/scans/ScansPage";
 import ScanDetailPage from "./pages/scans/ScanDetailPage";
+import AutoPentestPage from "./pages/autopentest/AutoPentestPage";
 import FindingsPage from "./pages/findings/FindingsPage";
 import FindingDetailPage from "./pages/findings/FindingDetailPage";
 import ReportsPage from "./pages/reports/ReportsPage";
@@ -29,9 +31,11 @@ export default function App() {
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="projects/:id" element={<ProjectDetailPage />} />
             <Route path="repositories" element={<RepositoriesPage />} />
+            <Route path="applications" element={<ApplicationTargetsPage />} />
             <Route path="scan-policies" element={<ScanPoliciesPage />} />
             <Route path="scans" element={<ScansPage />} />
             <Route path="scans/:id" element={<ScanDetailPage />} />
+            <Route path="autopentest" element={<AutoPentestPage />} />
             <Route path="findings" element={<FindingsPage />} />
             <Route path="findings/:id" element={<FindingDetailPage />} />
             <Route path="reports" element={<ReportsPage />} />

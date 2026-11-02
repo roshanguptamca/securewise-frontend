@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Download, Play, RotateCcw } from "lucide-react";
 
 import { sw } from "../../api/client";
+import { allPages } from "../../api/pagination";
 import { ScanDiagnosticsPanel } from "../../components/scans/ScanDiagnosticsPanel";
 import {
   EngineStatusBadge,
@@ -11,9 +12,14 @@ import {
   SeverityBadge,
 } from "../../components/ui/Badges";
 import { ErrorState, LoadingState } from "../../components/ui/States";
+import {
+  isCurrentPassiveAuthorization,
+  isPassiveWebsiteScan,
+} from "./passiveWebsite";
 import type {
   Finding,
   Scan,
+  SecureWiseTestingAuthorization,
   ScanDiagnostics,
   ScanEngineResult,
   ScanProgress,
@@ -23,6 +29,7 @@ const POLL_INTERVAL = 3000;
 const ACTIVE_STATUSES = [
   "pending",
   "queued",
+  "worker_claimed",
   "cloning",
   "running",
   "running_sast",
@@ -67,7 +74,7 @@ function engineLabel(engine: string): string {
     secrets: "Secret scan",
     iac: "IaC scan",
     container: "Container scan",
-    api: "API scan",
+    api: "API security (static OpenAPI)",
     dast: "DAST",
   };
   return labels[engine] ?? humanize(engine);
@@ -79,6 +86,23 @@ function displayList(value: unknown): string {
   }
   if (typeof value === "string" && value.trim()) return value;
   return "None detected";
+}
+
+function engineExecutionLabel(
+  engine: string,
+  rawSummary?: Record<string, unknown>,
+): string {
+  const executionMode = rawSummary?.execution_mode;
+  if (engine === "api") return "OpenAPI static analysis; no API requests sent";
+  if (executionMode === "zap_baseline") return "OWASP ZAP baseline";
+  if (executionMode === "requests_passive_fallback") {
+    return "Lightweight passive HTTP checks (ZAP unavailable or failed)";
+  }
+  const rawTool = rawSummary?.raw_tool;
+  if (typeof rawTool === "string" && rawTool && rawTool !== "none") {
+    return `${rawTool} · ${String(rawSummary?.mode ?? "mode unknown").replaceAll("_", " ")}`;
+  }
+  return "Not executed or not configured";
 }
 
 function readDiscovery(scan: Scan): Record<string, unknown> {
@@ -232,6 +256,7 @@ function buildEngines(
 function buildTimeline(
   scan: Scan,
   engines: ReturnType<typeof buildEngines>,
+  passiveCheck = false,
 ): Array<{ timestamp: string; title: string; detail: string }> {
   const events: Array<{ timestamp: string; title: string; detail: string }> =
     [];
@@ -279,7 +304,7 @@ function buildTimeline(
     events.push({
       timestamp: scan.completed_at,
       title:
-        scan.status === "completed_partial"
+        scan.status === "completed_partial" && !passiveCheck
           ? "Scan completed with partial coverage"
           : "Scan completed",
       detail: `Status: ${scan.status}`,
@@ -361,12 +386,12 @@ export default function ScanDetailPage() {
     if (!id) return;
     setError("");
     try {
-      const [scanResponse, findingsResponse] = await Promise.all([
+      const [scanResponse, scanFindings] = await Promise.all([
         sw.scans.get(id),
-        sw.findings.list({ scan: id }),
+        allPages<Finding>((page) => sw.findings.list({ scan: id, page })),
       ]);
       setScan(scanResponse.data);
-      setFindings(findingsResponse.data.results ?? findingsResponse.data);
+      setFindings(scanFindings);
     } catch {
       setError("Failed to load scan.");
     } finally {
@@ -432,6 +457,65 @@ export default function ScanDetailPage() {
     await runScanAction(() => sw.scans.retry(id), "Retry requested.");
   };
 
+  const handleRetest = async () => {
+    if (!scan) return;
+    setActionLoading(true);
+    setActionMessage("");
+    try {
+      const { data } = await sw.testingAuthorizations.list();
+      const authorizations: SecureWiseTestingAuthorization[] = Array.isArray(
+        data,
+      )
+        ? data
+        : (data?.results ?? []);
+      const originalAuthorization = authorizations.find(
+        (item) => item.id === scan.testing_authorization,
+      );
+      const authorization = authorizations.find(
+        (item) =>
+          item.organization === scan.organization &&
+          item.target === originalAuthorization?.target &&
+          isCurrentPassiveAuthorization(item),
+      );
+      if (!originalAuthorization || !authorization) {
+        setActionMessage(
+          "Retest not started: the testing authorization for this website has expired or was revoked. Renew it under Application Targets, then retest.",
+        );
+        return;
+      }
+      const created = await sw.scans.create({
+        organization: scan.organization,
+        project: scan.project,
+        scan_type: "dast",
+        target_url: scan.target_url,
+        testing_authorization: authorization.id,
+        selected_engines: ["dast"],
+      });
+      const newId: string = created.data.id;
+      try {
+        await sw.scans.start(newId);
+      } catch (startError: unknown) {
+        try {
+          await sw.scans.cancel(newId);
+        } catch {
+          setActionMessage(
+            `Retest not started: ${parseApiError(startError)} Automatic cancellation could not be confirmed for scan ${newId}. Inspect it in Scans before trying again.`,
+          );
+          return;
+        }
+        setActionMessage(
+          `Retest not started: ${parseApiError(startError)} The unstarted retest was cancelled.`,
+        );
+        return;
+      }
+      navigate(`/scans/${newId}`);
+    } catch (retestError: any) {
+      setActionMessage(parseApiError(retestError));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleDownloadPartialReport = async () => {
     if (!scan || !id) return;
     await runScanAction(async () => {
@@ -493,7 +577,8 @@ export default function ScanDetailPage() {
     progress?.findings_count ?? scan.finding_counts?.total ?? 0;
   const engines = buildEngines(progress, engineResults);
   const discoverySummary = buildDiscoverySummary(scan);
-  const timeline = buildTimeline(scan, engines);
+  const passiveCheck = isPassiveWebsiteScan(scan, engines);
+  const timeline = buildTimeline(scan, engines, passiveCheck);
   const failedEngines = engines.filter((row) => row.status === "failed");
   const skippedEngines = engines.filter((row) => row.status === "skipped");
   const completedEngines = engines.filter((row) => row.status === "completed");
@@ -550,7 +635,12 @@ export default function ScanDetailPage() {
     scan.status === "completed_partial" || failedEngines.length > 0
       ? "Retry Failed Stages"
       : "Retry Scan";
-  const partialCoverage = scan.status === "completed_partial";
+  const partialCoverage = scan.status === "completed_partial" && !passiveCheck;
+  const execution = scan.scanner_metadata?.execution;
+  const executionAudit =
+    execution && typeof execution === "object" && !Array.isArray(execution)
+      ? (execution as Record<string, unknown>)
+      : null;
 
   return (
     <div>
@@ -577,10 +667,12 @@ export default function ScanDetailPage() {
             className="flex items-center gap-3 mb-1"
             style={{ flexWrap: "wrap" }}
           >
-            <h1 className="sw-page-title">Scan Detail</h1>
+            <h1 className="sw-page-title">
+              {passiveCheck ? "Passive Website Security Check" : "Scan Detail"}
+            </h1>
             <ScanStatusBadge value={scan.status} />
             <span className="badge badge-info">
-              {scan.scan_type.toUpperCase()}
+              {passiveCheck ? "PASSIVE" : scan.scan_type.toUpperCase()}
             </span>
           </div>
           <p className="sw-page-subtitle">
@@ -603,7 +695,17 @@ export default function ScanDetailPage() {
               {actionLoading ? "Starting..." : "Start Scan"}
             </button>
           )}
-          {canRetry && (
+          {passiveCheck && !isActive && (
+            <button
+              className="btn-primary"
+              onClick={handleRetest}
+              disabled={actionLoading}
+            >
+              <RotateCcw size={14} />
+              {actionLoading ? "Starting retest..." : "Retest"}
+            </button>
+          )}
+          {canRetry && !passiveCheck && (
             <button
               className="btn-secondary"
               onClick={handleRetry}
@@ -615,6 +717,134 @@ export default function ScanDetailPage() {
           )}
         </div>
       </div>
+
+      {passiveCheck && (
+        <div className="alert alert-info mb-4" role="note">
+          <span>ℹ️</span>
+          <div style={{ display: "grid", gap: 6 }}>
+            <strong>
+              Passive Website Security Check — not a full penetration test
+            </strong>
+            <span className="text-sm">
+              SecureWise sent read-only requests to {scan.target_url} and
+              reviewed the response headers and cookies. No attacks, form
+              submissions or active scanning were performed, so this does not
+              cover login, authorization or application logic flaws.
+            </span>
+            {scan.status === "completed_partial" && (
+              <span className="text-sm">
+                <strong>Why "completed partial"?</strong> The check ran
+                successfully. SecureWise labels a scan "partial" whenever no
+                full external scanner (such as OWASP ZAP) was used, so a
+                passive-only result is never presented as complete coverage.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {executionAudit && (
+        <details className="glass-card mb-4" style={{ padding: "1rem" }}>
+          <summary className="text-sm font-semibold">
+            Worker execution audit
+          </summary>
+          <p className="text-xs text-muted mt-2">
+            Historical execution for this scan, independent of the worker's
+            current online status.
+          </p>
+          <dl className="grid gap-2 mt-2 text-sm">
+            {[
+              ["worker_id", "Worker"],
+              ["claimed_at", "Claimed"],
+              ["started_at", "Started"],
+              ["completed_at", "Completed"],
+            ].map(([field, label]) => {
+              const value = executionAudit[field];
+              return (
+                <div key={field} style={{ overflowWrap: "anywhere" }}>
+                  <dt className="text-xs text-muted">{label}</dt>
+                  <dd>
+                    {typeof value === "string" && value
+                      ? value
+                      : "Not recorded"}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+        </details>
+      )}
+
+      {progress?.worker_readiness && (
+        <div className="glass-card mb-4" style={{ padding: "1rem" }}>
+          <div className="text-sm font-semibold mb-2">Worker readiness</div>
+          <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+            {(
+              [
+                ["Worker", progress.worker_readiness.worker_available],
+                ["Docker", progress.worker_readiness.docker_ready],
+                ["Trivy", progress.worker_readiness.trivy_available],
+                ["OWASP ZAP", progress.worker_readiness.zap_available],
+              ] as const
+            ).map(([label, ready]) => (
+              <span
+                key={label}
+                className={`badge ${ready ? "badge-completed" : "badge-failed"}`}
+                aria-label={`${label} ${ready ? "available" : "unavailable"}`}
+              >
+                {label}: {ready ? "ready" : "unavailable"}
+              </span>
+            ))}
+          </div>
+          <div className="text-xs text-muted mt-2">
+            Runner: {progress.worker_readiness.runner_type || "unavailable"}
+            {progress.worker_readiness.architecture
+              ? ` (${progress.worker_readiness.architecture})`
+              : ""}
+            {progress.worker_readiness.runners.length > 0 &&
+              ` · Fleet: ${progress.worker_readiness.runners.reduce((total, runner) => total + runner.online, 0)} online, ${progress.worker_readiness.runners.reduce((total, runner) => total + runner.idle, 0)} idle`}
+          </div>
+          {Object.keys(progress.worker_readiness.scanner_versions).length >
+            0 && (
+            <div className="text-xs text-muted mt-1">
+              Scanner versions:{" "}
+              {Object.entries(progress.worker_readiness.scanner_versions)
+                .map(([name, version]) => `${name} ${version}`)
+                .join(", ")}
+            </div>
+          )}
+          {progress.worker_readiness.runners.length > 0 && (
+            <ul className="text-xs text-muted mt-1">
+              {progress.worker_readiness.runners.map((runner) => (
+                <li key={`${runner.runner_type}-${runner.architecture}`}>
+                  {runner.runner_type} {runner.architecture}: {runner.online}{" "}
+                  online / {runner.idle} idle ·{" "}
+                  {runner.capabilities
+                    .filter((capability) =>
+                      [
+                        "sast",
+                        "sca",
+                        "secrets",
+                        "iac",
+                        "container",
+                        "dast",
+                        "api",
+                        "playwright",
+                        "docker_daemon",
+                      ].includes(capability),
+                    )
+                    .join(", ") || "no scanner capabilities"}
+                </li>
+              ))}
+            </ul>
+          )}
+          {progress.worker_readiness.diagnostics.length > 0 && (
+            <div className="text-xs text-muted mt-2">
+              {progress.worker_readiness.diagnostics.join(" ")}
+            </div>
+          )}
+        </div>
+      )}
 
       {partialCoverage && (
         <div className="alert alert-warning mb-6">
@@ -715,39 +945,41 @@ export default function ScanDetailPage() {
         ))}
       </div>
 
-      <div className="glass-card mb-6" style={{ padding: "1.25rem" }}>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 style={{ fontSize: "0.95rem", fontWeight: 700 }}>
-              Discovery summary
-            </h2>
-            <p className="text-xs text-muted">
-              Fields surfaced from the backend discovery and runtime planning
-              metadata.
-            </p>
-          </div>
-          <span className="badge badge-info">
-            {Math.round((Number(readDiscovery(scan).confidence) || 0) * 100)}%
-          </span>
-        </div>
-        <div
-          className="grid gap-3"
-          style={{
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          }}
-        >
-          {discoverySummary.map((item) => (
-            <div
-              key={item.label}
-              className="glass-card-sm"
-              style={{ padding: "0.9rem 1rem" }}
-            >
-              <div className="text-xs text-muted mb-1">{item.label}</div>
-              <div className="text-sm text-primary">{item.value}</div>
+      {!passiveCheck && (
+        <div className="glass-card mb-6" style={{ padding: "1.25rem" }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 style={{ fontSize: "0.95rem", fontWeight: 700 }}>
+                Discovery summary
+              </h2>
+              <p className="text-xs text-muted">
+                Fields surfaced from the backend discovery and runtime planning
+                metadata.
+              </p>
             </div>
-          ))}
+            <span className="badge badge-info">
+              {Math.round((Number(readDiscovery(scan).confidence) || 0) * 100)}%
+            </span>
+          </div>
+          <div
+            className="grid gap-3"
+            style={{
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
+            {discoverySummary.map((item) => (
+              <div
+                key={item.label}
+                className="glass-card-sm"
+                style={{ padding: "0.9rem 1rem" }}
+              >
+                <div className="text-xs text-muted mb-1">{item.label}</div>
+                <div className="text-sm text-primary">{item.value}</div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="glass-card mb-6" style={{ overflow: "hidden" }}>
         <div
@@ -757,11 +989,17 @@ export default function ScanDetailPage() {
           }}
         >
           <h2 style={{ fontSize: "0.95rem", fontWeight: 700 }}>Engines</h2>
+          <p className="text-xs text-muted mt-1">
+            Coverage: {completedEngines.length}/
+            {scan.selected_engines?.length ?? engines.length} engines completed;{" "}
+            {skippedEngines.length} skipped; {failedEngines.length} failed.
+          </p>
         </div>
         <table className="sw-table">
           <thead>
             <tr>
               <th>Engine</th>
+              <th>Method</th>
               <th>Status</th>
               <th>Started</th>
               <th>Completed</th>
@@ -791,6 +1029,15 @@ export default function ScanDetailPage() {
                     <span className="badge badge-info">
                       {engineLabel(String(engine.engine)).toUpperCase()}
                     </span>
+                  </td>
+                  <td
+                    className="text-muted text-xs"
+                    style={{ maxWidth: 260, whiteSpace: "normal" }}
+                  >
+                    {engineExecutionLabel(
+                      String(engine.engine),
+                      engine.raw_summary,
+                    )}
                   </td>
                   <td>
                     <EngineStatusBadge value={engine.status} />
@@ -902,7 +1149,7 @@ export default function ScanDetailPage() {
         </div>
       ) : (
         scan.status !== "pending" &&
-        !["queued", "running"].includes(scan.status) &&
+        !["queued", "worker_claimed", "running"].includes(scan.status) &&
         !scan.status.startsWith("running_") && (
           <div className="alert alert-info mb-6">
             <span>ℹ️</span>
@@ -952,6 +1199,14 @@ export default function ScanDetailPage() {
               View all →
             </Link>
           </div>
+          <p
+            className="text-xs text-muted"
+            style={{ padding: "0.75rem 1.25rem" }}
+          >
+            These are current project finding records linked to this scan, not
+            immutable evidence snapshots. A later scan can update their evidence
+            and status.
+          </p>
           <table className="sw-table">
             <thead>
               <tr>
