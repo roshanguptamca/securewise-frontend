@@ -77,8 +77,13 @@ const engineRow = {
 };
 const activeAuth = {
   id: "auth-1",
+  organization: "org-1",
+  target: "target-1",
   active: true,
   approved_scan_methods: ["passive_http"],
+  starts_at: "2020-01-01T00:00:00Z",
+  expires_at: "2099-01-01T00:00:00Z",
+  revoked_at: null,
 };
 
 function renderPage() {
@@ -179,6 +184,125 @@ describe("Passive website scan presentation", () => {
     ).toBeInTheDocument();
     expect(mockScans.create).not.toHaveBeenCalled();
     expect(mockScans.start).not.toHaveBeenCalled();
+  });
+
+  it("loads every findings page while retaining the scan filter", async () => {
+    mockFindings.list
+      .mockResolvedValueOnce({
+        data: { results: [], next: "?scan=scan-1&page=2" },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          results: [
+            {
+              id: "later-page-finding",
+              title: "Later-page header finding",
+              severity: "medium",
+              scanner_type: "dast",
+              cwe_id: "CWE-693",
+              owasp_category: "A05:2021",
+              status: "open",
+            },
+          ],
+          next: null,
+        },
+      });
+    renderPage();
+    expect(
+      await screen.findByText("Later-page header finding"),
+    ).toBeInTheDocument();
+    expect(mockFindings.list).toHaveBeenNthCalledWith(1, {
+      scan: "scan-1",
+      page: 1,
+    });
+    expect(mockFindings.list).toHaveBeenNthCalledWith(2, {
+      scan: "scan-1",
+      page: 2,
+    });
+  });
+
+  it("shows the recorded execution worker even if current readiness is unavailable", async () => {
+    mockScans.get.mockResolvedValue({
+      data: {
+        ...scan,
+        scanner_metadata: {
+          execution: {
+            worker_id: "synthetic-website-worker",
+            claimed_at: now,
+            started_at: now,
+            completed_at: now,
+            unexpected_secret: "must-not-render",
+          },
+        },
+      },
+    });
+    renderPage();
+    await userEvent.click(await screen.findByText("Worker execution audit"));
+    expect(screen.getByText("synthetic-website-worker")).toBeInTheDocument();
+    expect(
+      screen.getByText(/independent of the worker's current online status/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("must-not-render")).not.toBeInTheDocument();
+  });
+
+  it("uses renewed approval for the same target without modifying historical scans", async () => {
+    mockAuths.list.mockResolvedValue({
+      data: [
+        { ...activeAuth, active: false, expires_at: "2000-01-01T00:00:00Z" },
+        { ...activeAuth, id: "renewed-approval" },
+      ],
+    });
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Retest" }),
+    );
+    await waitFor(() =>
+      expect(mockScans.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          testing_authorization: "renewed-approval",
+          project: scan.project,
+        }),
+      ),
+    );
+    expect(mockScans.retry).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { expires_at: "2000-01-01T00:00:00Z" },
+    { revoked_at: now },
+    { starts_at: "2099-01-01T00:00:00Z" },
+    { organization: "different-organization" },
+  ])(
+    "rejects stale, future, revoked or cross-organization approvals: %j",
+    async (changes) => {
+      mockAuths.list.mockResolvedValue({
+        data: [{ ...activeAuth, ...changes }],
+      });
+      renderPage();
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Retest" }),
+      );
+      expect(
+        await screen.findByText(/authorization for this website has expired/i),
+      ).toBeInTheDocument();
+      expect(mockScans.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not claim the rejected retest was cancelled when cancellation fails", async () => {
+    mockScans.start.mockRejectedValueOnce({
+      response: { data: { detail: "No compatible worker" } },
+    });
+    mockScans.cancel.mockRejectedValueOnce(new Error("offline"));
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Retest" }),
+    );
+    expect(
+      await screen.findByText(
+        /Automatic cancellation could not be confirmed for scan scan-2/,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("keeps the partial-coverage banner for non-passive scans", async () => {

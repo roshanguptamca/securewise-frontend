@@ -101,8 +101,13 @@ async function mock(page: Page, posts: string[], authActive: boolean) {
         json: [
           {
             id: "auth-1",
+            organization: scan.organization,
+            target: "target-1",
             active: authActive,
             approved_scan_methods: ["passive_http"],
+            starts_at: "2020-01-01T00:00:00Z",
+            expires_at: "2099-01-01T00:00:00Z",
+            revoked_at: null,
           },
         ],
       });

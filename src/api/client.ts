@@ -161,7 +161,10 @@ export const sw = {
 
   // Organizations
   orgs: {
-    list: () => api.get("/securewise/organizations/"),
+    list: (page?: number) =>
+      page === undefined
+        ? api.get("/securewise/organizations/")
+        : api.get("/securewise/organizations/", { params: { page } }),
     get: (id: string) => api.get(`/securewise/organizations/${id}/`),
     create: (data: object) => api.post("/securewise/organizations/", data),
     update: (id: string, data: object) =>
@@ -171,9 +174,12 @@ export const sw = {
 
   // Members
   members: {
-    list: (orgId?: string) =>
+    list: (orgId?: string, page?: number) =>
       api.get("/securewise/memberships/", {
-        params: orgId ? { organization: orgId } : {},
+        params: {
+          ...(orgId ? { organization: orgId } : {}),
+          ...(page === undefined ? {} : { page }),
+        },
       }),
     add: (data: object) => api.post("/securewise/memberships/", data),
   },
@@ -229,9 +235,12 @@ export const sw = {
 
   // Projects
   projects: {
-    list: (orgId?: string) =>
+    list: (orgId?: string, page?: number) =>
       api.get("/securewise/projects/", {
-        params: orgId ? { organization: orgId } : {},
+        params: {
+          ...(orgId ? { organization: orgId } : {}),
+          ...(page === undefined ? {} : { page }),
+        },
       }),
     get: (id: string) => api.get(`/securewise/projects/${id}/`),
     create: (data: object) => api.post("/securewise/projects/", data),

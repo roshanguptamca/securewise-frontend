@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Download, Play, RotateCcw } from "lucide-react";
 
 import { sw } from "../../api/client";
+import { allPages } from "../../api/pagination";
 import { ScanDiagnosticsPanel } from "../../components/scans/ScanDiagnosticsPanel";
 import {
   EngineStatusBadge,
@@ -11,7 +12,10 @@ import {
   SeverityBadge,
 } from "../../components/ui/Badges";
 import { ErrorState, LoadingState } from "../../components/ui/States";
-import { isPassiveWebsiteScan } from "./passiveWebsite";
+import {
+  isCurrentPassiveAuthorization,
+  isPassiveWebsiteScan,
+} from "./passiveWebsite";
 import type {
   Finding,
   Scan,
@@ -382,12 +386,12 @@ export default function ScanDetailPage() {
     if (!id) return;
     setError("");
     try {
-      const [scanResponse, findingsResponse] = await Promise.all([
+      const [scanResponse, scanFindings] = await Promise.all([
         sw.scans.get(id),
-        sw.findings.list({ scan: id }),
+        allPages<Finding>((page) => sw.findings.list({ scan: id, page })),
       ]);
       setScan(scanResponse.data);
-      setFindings(findingsResponse.data.results ?? findingsResponse.data);
+      setFindings(scanFindings);
     } catch {
       setError("Failed to load scan.");
     } finally {
@@ -464,14 +468,16 @@ export default function ScanDetailPage() {
       )
         ? data
         : (data?.results ?? []);
-      const authorization = authorizations.find(
+      const originalAuthorization = authorizations.find(
         (item) => item.id === scan.testing_authorization,
       );
-      if (
-        !authorization ||
-        !authorization.active ||
-        !authorization.approved_scan_methods.includes("passive_http")
-      ) {
+      const authorization = authorizations.find(
+        (item) =>
+          item.organization === scan.organization &&
+          item.target === originalAuthorization?.target &&
+          isCurrentPassiveAuthorization(item),
+      );
+      if (!originalAuthorization || !authorization) {
         setActionMessage(
           "Retest not started: the testing authorization for this website has expired or was revoked. Renew it under Application Targets, then retest.",
         );
@@ -488,8 +494,15 @@ export default function ScanDetailPage() {
       const newId: string = created.data.id;
       try {
         await sw.scans.start(newId);
-      } catch (startError: any) {
-        await sw.scans.cancel(newId).catch(() => undefined);
+      } catch (startError: unknown) {
+        try {
+          await sw.scans.cancel(newId);
+        } catch {
+          setActionMessage(
+            `Retest not started: ${parseApiError(startError)} Automatic cancellation could not be confirmed for scan ${newId}. Inspect it in Scans before trying again.`,
+          );
+          return;
+        }
         setActionMessage(
           `Retest not started: ${parseApiError(startError)} The unstarted retest was cancelled.`,
         );
@@ -623,6 +636,11 @@ export default function ScanDetailPage() {
       ? "Retry Failed Stages"
       : "Retry Scan";
   const partialCoverage = scan.status === "completed_partial" && !passiveCheck;
+  const execution = scan.scanner_metadata?.execution;
+  const executionAudit =
+    execution && typeof execution === "object" && !Array.isArray(execution)
+      ? (execution as Record<string, unknown>)
+      : null;
 
   return (
     <div>
@@ -723,6 +741,38 @@ export default function ScanDetailPage() {
             )}
           </div>
         </div>
+      )}
+
+      {executionAudit && (
+        <details className="glass-card mb-4" style={{ padding: "1rem" }}>
+          <summary className="text-sm font-semibold">
+            Worker execution audit
+          </summary>
+          <p className="text-xs text-muted mt-2">
+            Historical execution for this scan, independent of the worker's
+            current online status.
+          </p>
+          <dl className="grid gap-2 mt-2 text-sm">
+            {[
+              ["worker_id", "Worker"],
+              ["claimed_at", "Claimed"],
+              ["started_at", "Started"],
+              ["completed_at", "Completed"],
+            ].map(([field, label]) => {
+              const value = executionAudit[field];
+              return (
+                <div key={field} style={{ overflowWrap: "anywhere" }}>
+                  <dt className="text-xs text-muted">{label}</dt>
+                  <dd>
+                    {typeof value === "string" && value
+                      ? value
+                      : "Not recorded"}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+        </details>
       )}
 
       {progress?.worker_readiness && (
@@ -1149,6 +1199,14 @@ export default function ScanDetailPage() {
               View all →
             </Link>
           </div>
+          <p
+            className="text-xs text-muted"
+            style={{ padding: "0.75rem 1.25rem" }}
+          >
+            These are current project finding records linked to this scan, not
+            immutable evidence snapshots. A later scan can update their evidence
+            and status.
+          </p>
           <table className="sw-table">
             <thead>
               <tr>

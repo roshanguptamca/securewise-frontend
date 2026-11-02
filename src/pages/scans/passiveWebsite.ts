@@ -1,4 +1,17 @@
-import type { Scan } from "../../types";
+import type { Scan, SecureWiseTestingAuthorization } from "../../types";
+
+export function isCurrentPassiveAuthorization(
+  authorization: SecureWiseTestingAuthorization,
+): boolean {
+  const now = Date.now();
+  return Boolean(
+    authorization.active &&
+    !authorization.revoked_at &&
+    authorization.approved_scan_methods.includes("passive_http") &&
+    new Date(authorization.starts_at).getTime() <= now &&
+    new Date(authorization.expires_at).getTime() > now,
+  );
+}
 
 export const PASSIVE_EXECUTION_MODE = "authorized_passive_http";
 
